@@ -1,0 +1,6 @@
+gtk2-engines-oxygen (1.0.0+git260+36e283c-1) unstable; urgency=low
+
+  * Initial release. (Closes: #601046)
+
+ -- Fathi Boudra <fabo@debian.org>  Fri, 31 Dec 2010 10:31:44 +0200
+
