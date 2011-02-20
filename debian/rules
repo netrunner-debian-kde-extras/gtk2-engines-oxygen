@@ -8,3 +8,8 @@
 
 override_dh_makeshlibs:
 	dh_makeshlibs -X/usr/lib/gtk-2.0
+
+override_dh_auto_configure:
+	dh_auto_configure -Scmake -- -DCMAKE_SHARED_LINKER_FLAGS="-Wl,--no-undefined -Wl,--as-needed" \
+					-DCMAKE_MODULE_LINKER_FLAGS="-Wl,--no-undefined -Wl,--as-needed" \
+					-DCMAKE_EXE_LINKER_FLAGS="-Wl,--no-undefined -Wl,--as-needed"
