@@ -1,0 +1,118 @@
+From: Ruslan Kabatsayev <b7.10110111@gmail.com>
+Last-Update: 2011-02-20
+Description: Fix "assertion (IA__gtk_box_reorder_child: assertion)"
+ Don't set dialog button order for responses which don't exist on the dialog
+ CCBUG: 266561
+Bug: https://bugs.kde.org/show_bug.cgi?id=266561
+Bug-Ubuntu: https://bugs.launchpad.net/ubuntu/+source/gtk2-engines-oxygen/+bug/719078
+Origin: upstream, commit:b5a9fa63c7ff65b5615af5981e7d7b7f3f1f580c
+---
+ src/animations/oxygendialogengine.cpp |   37 ++++++++++++++++++++++------------
+ src/oxygengtkutils.cpp                |   25 ++++++++++++++++++++++
+ src/oxygengtkutils.h                  |    3 ++
+ 3 files changed, 52 insertions(+), 13 deletions(-)
+
+--- a/src/animations/oxygendialogengine.cpp
++++ b/src/animations/oxygendialogengine.cpp
+@@ -23,20 +23,14 @@
+ 
+ namespace Oxygen
+ {
+-
+     //_________________________________________________________
+     bool DialogEngine::registerWidget( GtkWidget* widget )
+     {
+         if( contains( widget ) ) return false;
+ 
+-        /*
+-        gtk_dialog_set_alternative_button_order will cause errors to be logged, but don't want these
+-        so register or own error handler, and then unregister afterwards...
+-        */
+-        const unsigned int id( g_log_set_handler("Gtk", G_LOG_LEVEL_CRITICAL, Gtk::oxygen_log_handler, NULL) );
++        GtkDialog* dialog(GTK_DIALOG(widget));
+ 
+-        // change order
+-        gtk_dialog_set_alternative_button_order( GTK_DIALOG( widget ),
++        gint responses[]={
+             GTK_RESPONSE_HELP,
+             GTK_RESPONSE_OK,
+             GTK_RESPONSE_YES,
+@@ -45,12 +39,29 @@ namespace Oxygen
+             GTK_RESPONSE_REJECT,
+             GTK_RESPONSE_CLOSE,
+             GTK_RESPONSE_NO,
+-            GTK_RESPONSE_CANCEL,
+-            -1 );
++            GTK_RESPONSE_CANCEL
++        };
++        const int numOfResponseIDs=sizeof(responses)/sizeof(responses[0]);
++
++        int numOfResponsesFound=0;
++        for(int i=0; i<numOfResponseIDs; i++)
++        {
++            if(Gtk::dialog_find_button(dialog,responses[i]))
++            {
++                #if OXYGEN_DEBUG
++                std::cerr << "responseID found: " << responses[i] << std::endl;
++                #endif
++                // i is always >= numOfResponsesFound, so this will copy response id nearer to start, but never to end
++                responses[numOfResponsesFound]=responses[i];
++                numOfResponsesFound++;
++            }
++        }
++        #if OXYGEN_DEBUG
++        std::cerr << "numOfResponsesFound: " << numOfResponsesFound << std::endl;
++        #endif
+ 
+-        // reset error handler
+-        g_log_remove_handler( "Gtk", id );
+-        g_log_set_handler( "Gtk", G_LOG_LEVEL_CRITICAL, g_log_default_handler, NULL );
++        // change order
++        gtk_dialog_set_alternative_button_order_from_array( dialog, numOfResponsesFound,responses );
+ 
+         // insert in set
+         _data.insert( widget );
+--- a/src/oxygengtkutils.cpp
++++ b/src/oxygengtkutils.cpp
+@@ -964,4 +964,29 @@ namespace Oxygen
+ 
+     }
+ 
++    GtkWidget* Gtk::dialog_find_button(GtkDialog* dialog,gint response_id)
++    {
++        GList *children, *tmp_list;
++        GtkWidget *child = NULL;
++
++        children = gtk_container_get_children (GTK_CONTAINER (dialog->action_area));
++
++        for (tmp_list = children; tmp_list; tmp_list = tmp_list->next)
++        {
++            gint rid = gtk_dialog_get_response_for_widget(dialog, GTK_WIDGET(tmp_list->data));
++
++            if (rid == response_id)
++            {
++                child = GTK_WIDGET(tmp_list->data);
++                break;
++            }
++        }
++
++        g_list_free (children);
++
++        return child;
++
++    }
++
++
+ }
+--- a/src/oxygengtkutils.h
++++ b/src/oxygengtkutils.h
+@@ -292,6 +292,9 @@ namespace Oxygen
+         {}
+         //@}
+ 
++        //! returns a widget which has response_id as response id for dialog
++        GtkWidget* dialog_find_button(GtkDialog* dialog,gint response_id);
++
+     }
+ 
+ }
