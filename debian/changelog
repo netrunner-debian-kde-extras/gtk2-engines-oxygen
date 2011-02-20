@@ -1,18 +1,18 @@
 gtk2-engines-oxygen (1.0.2-2) UNRELEASED; urgency=low
 
-  * debian/control:
+  * Update debian/control:
     - Point to the correct VCS.
     - Bumped B-D on debhelper to 8.
     - Added kde-config-gtk-style to Suggests.
-  * debian/watch: Added.
-  * debian/patches/LP719078_fix_assert_failure.patch: Added. (LP: #719078) 
-  * debian/source:
+  * Add debian/watch file.
+  * Add debian/patches/LP719078_fix_assert_failure.patch (LP: #719078) 
+  * Update debian/source:
     - local-options: Added with "unapply-patches".
     - options: Added to ensure BZip2 compression.
-  * debian/compat: Raised to 8.
-  * debian/rules:
+  * Update debian/compat: raise to 8.
+  * Update debian/rules:
     - Ensure minimal linking.
-    - Added .PHONY line.
+    - Add .PHONY line.
 
  -- Kai Wasserbäch <curan@debian.org>  Sun, 20 Feb 2011 10:37:21 +0100
 
