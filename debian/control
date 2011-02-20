@@ -12,6 +12,7 @@ Vcs-Browser: http://git.debian.org/?p=pkg-kde/kde-extras/gtk2-engines-oxygen.git
 Package: gtk2-engines-oxygen
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
+Suggests: kde-config-gtk-style
 Description: Oxygen widget theme for GTK+-based applications
  Oxygen-Gtk is a port of the Oxygen widget style to GTK+.
  .
