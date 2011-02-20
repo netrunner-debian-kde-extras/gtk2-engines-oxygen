@@ -33,7 +33,6 @@ namespace Oxygen
     {
 
         // create engines
-        registerEngine( _backgroundHintEngine = new BackgroundHintEngine( this ) );
         registerEngine( _comboBoxEngine = new ComboBoxEngine( this ) );
         registerEngine( _comboBoxEntryEngine = new ComboBoxEntryEngine( this ) );
         registerEngine( _dialogEngine = new DialogEngine( this ) );
@@ -62,7 +61,7 @@ namespace Oxygen
         if( _allWidgets.find( widget ) != _allWidgets.end() ) return false;
 
         #if OXYGEN_DEBUG
-        std::cout << "Oxygen::Animations::registerWidget - " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")" << std::endl;
+        std::cerr << "Oxygen::Animations::registerWidget - " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")" << std::endl;
         #endif
 
         WidgetData data;
@@ -78,7 +77,7 @@ namespace Oxygen
     {
 
         #if OXYGEN_DEBUG
-        std::cout << "Oxygen::Animations::unregisterWidget - " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")" << std::endl;
+        std::cerr << "Oxygen::Animations::unregisterWidget - " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")" << std::endl;
         #endif
 
         // find in map
@@ -105,6 +104,7 @@ namespace Oxygen
         _enabled = value;
         for( BaseEngine::List::iterator iter = _engines.begin(); iter != _engines.end(); ++iter )
         { (*iter)->setEnabled( value ); }
+
     }
 
     //____________________________________________________________________________________________

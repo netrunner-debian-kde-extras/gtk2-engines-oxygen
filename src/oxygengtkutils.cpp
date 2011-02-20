@@ -30,6 +30,7 @@
 #include <cstring>
 #include <gtk/gtk.h>
 #include <iostream>
+#include <set>
 
 namespace Oxygen
 {
@@ -60,10 +61,31 @@ namespace Oxygen
     }
 
     //____________________________________________________________
-    bool Gtk::gtk_widget_is_panel_applet( GtkWidget* widget )
+    bool Gtk::gtk_widget_is_applet( GtkWidget* widget )
     {
+        if( !widget ) return false;
+
+
+        static const char* names[] =
+        {
+            "PanelWidget",
+            "PanelApplet",
+            0
+        };
+
+        // check widget name
         std::string name( G_OBJECT_TYPE_NAME( widget ) );
-        return name.find( "PanelApplet" ) == 0 || name.find( "PanelWidget" ) == 0;
+        for( unsigned int i = 0; names[i]; ++i )
+        { if( g_object_is_a( G_OBJECT( widget ), names[i] ) || name.find( names[i] ) == 0  ) return true; }
+
+        // also check parent
+        if( !widget->parent ) return false;
+        name = G_OBJECT_TYPE_NAME( widget->parent );
+        for( unsigned int i = 0; names[i]; ++i )
+        { if( g_object_is_a( G_OBJECT( widget->parent ), names[i] ) || name.find( names[i] ) == 0 ) return true; }
+
+        return false;
+
     }
 
     //____________________________________________________________
@@ -78,23 +100,25 @@ namespace Oxygen
     }
 
     //________________________________________________________
+    bool Gtk::gdk_default_screen_is_composited( void )
+    {
+        GdkScreen* screen( gdk_screen_get_default() );
+        return (screen && gdk_screen_is_composited( screen ) );
+    }
+
+    //________________________________________________________
     bool Gtk::gtk_widget_has_rgba( GtkWidget* widget )
     {
 
         if( !widget ) return false;
+        if( !gdk_default_screen_is_composited() ) return false;
 
-        GdkScreen *screen( gtk_widget_get_screen( widget ) );
-        if( screen && gdk_screen_is_composited( screen ) )
-        {
-
-            GdkVisual *visual( gtk_widget_get_visual (widget) );
-            return
-                visual->depth == 32 &&
-                visual->red_mask   == 0xff0000 &&
-                visual->green_mask == 0x00ff00 &&
-                visual->blue_mask  == 0x0000ff;
-
-        } else return false;
+        GdkVisual *visual( gtk_widget_get_visual (widget) );
+        return
+            visual->depth == 32 &&
+            visual->red_mask   == 0xff0000 &&
+            visual->green_mask == 0x00ff00 &&
+            visual->blue_mask  == 0x0000ff;
 
     }
 
@@ -132,23 +156,19 @@ namespace Oxygen
 
         if( !window ) return false;
 
-        GdkScreen *screen( gdk_drawable_get_screen( GDK_DRAWABLE( window ) ) );
-        if( gdk_screen_is_composited( screen ) )
-        {
+        if( !gdk_default_screen_is_composited() ) return false;
 
-            GdkVisual *visual( gdk_drawable_get_visual( GDK_DRAWABLE( window ) ) );
-            return
-                visual->depth == 32 &&
-                visual->red_mask   == 0xff0000 &&
-                visual->green_mask == 0x00ff00 &&
-                visual->blue_mask  == 0x0000ff;
-
-        } else return false;
+        GdkVisual *visual( gdk_drawable_get_visual( GDK_DRAWABLE( window ) ) );
+        return
+            visual->depth == 32 &&
+            visual->red_mask   == 0xff0000 &&
+            visual->green_mask == 0x00ff00 &&
+            visual->blue_mask  == 0x0000ff;
 
     }
 
     //________________________________________________________
-    bool Gtk::gtk_object_is_a( const GObject* object, const std::string& type_name )
+    bool Gtk::g_object_is_a( const GObject* object, const std::string& type_name )
     {
 
         if( object )
@@ -312,6 +332,28 @@ namespace Oxygen
     }
 
     //________________________________________________________
+    bool Gtk::gtk_path_bar_button_is_last( GtkWidget* widget )
+    {
+
+        GtkWidget* parent( gtk_widget_get_parent( widget ) );
+
+        // get parent and check type
+        if( !( parent && GTK_IS_CONTAINER( parent ) ) ) return false;
+
+        // get children
+        GList* children( gtk_container_get_children( GTK_CONTAINER( parent ) ) );
+
+        /*
+        for some reason, pathbar buttons are ordered in the container in reverse order.
+        meaning that the last button (in the pathbar) is stored first in the list.
+        */
+        bool result = (widget == g_list_first( children )->data );
+        if( children ) g_list_free( children );
+        return result;
+
+    }
+
+    //________________________________________________________
     GtkWidget* Gtk::gtk_button_find_image(GtkWidget* button)
     {
 
@@ -352,7 +394,6 @@ namespace Oxygen
         GList* children( gtk_container_get_children( GTK_CONTAINER( button ) ) );
         for( GList *child = g_list_first( children ); child; child = g_list_next( child ) )
         {
-
             if( GTK_IS_LABEL( child->data) )
             {
                 result = GTK_WIDGET( child->data );
@@ -476,10 +517,11 @@ namespace Oxygen
 
             // retrieve page and tab label
             GtkWidget* page( gtk_notebook_get_nth_page( notebook, i ) );
-            GtkWidget* tabLabel( gtk_notebook_get_tab_label( notebook, page ) );
+            if( !page ) continue;
 
-            if(!tabLabel)
-                return tab;
+            // get label
+            GtkWidget* tabLabel( gtk_notebook_get_tab_label( notebook, page ) );
+            if(!tabLabel) continue;
 
             // get allocted size and compare to position
             const GtkAllocation& allocation( tabLabel->allocation );
@@ -519,6 +561,8 @@ namespace Oxygen
         {
             // retrieve page and tab label
             GtkWidget* page( gtk_notebook_get_nth_page( notebook, i ) );
+            if( !page ) continue;
+
             GtkWidget* tabLabel( gtk_notebook_get_tab_label( notebook, page ) );
             if( widget == tabLabel ) return true;
         }
@@ -610,9 +654,15 @@ namespace Oxygen
 
             // retrieve page and tab label
             GtkWidget* page( gtk_notebook_get_nth_page( notebook, i ) );
-            GtkWidget* label( gtk_notebook_get_tab_label( notebook, page ) );
-            if( label && !gtk_widget_get_mapped( label ) ) return true;
+            if( !page ) continue;
 
+            GtkWidget* label( gtk_notebook_get_tab_label( notebook, page ) );
+
+            #if GTK_CHECK_VERSION(2, 20, 0)
+            if( label && !gtk_widget_get_mapped( label ) ) return true;
+            #else
+            if( label && !GTK_WIDGET_MAPPED( label ) ) return true;
+            #endif
         }
 
         return false;
@@ -633,18 +683,18 @@ namespace Oxygen
         // cast to notebook and check against number of pages
         if( GTK_IS_NOTEBOOK( notebook ) )
         {
-            GtkWidget* tabLabel=0;
             int numPages=gtk_notebook_get_n_pages( notebook );
             for( int i = 0; i < numPages; ++i )
             {
 
-                // retrieve page and tab label
+                // retrieve page
                 GtkWidget* page( gtk_notebook_get_nth_page( notebook, i ) );
-                if(page)
-                    tabLabel=gtk_notebook_get_tab_label( notebook, page );
+                if( !page ) continue;
 
-                if(page && tabLabel && GTK_IS_CONTAINER(tabLabel))
-                    gtk_container_adjust_buttons_state(GTK_CONTAINER(tabLabel));
+                // retrieve tab label
+                GtkWidget* tabLabel( gtk_notebook_get_tab_label( notebook, page ) );
+                if( tabLabel && GTK_IS_CONTAINER( tabLabel ) )
+                { gtk_container_adjust_buttons_state( GTK_CONTAINER( tabLabel ) ); }
 
             }
         }
@@ -705,6 +755,23 @@ namespace Oxygen
             case GTK_PROGRESS_TOP_TO_BOTTOM:
             return false;
         }
+
+    }
+
+    //________________________________________________________
+    bool Gtk::gtk_scrolled_window_force_sunken( GtkWidget* widget)
+    {
+
+        // FMIconView (from nautilus) always get sunken
+        if( g_object_is_a( G_OBJECT( widget ), "FMIconView" ) ) return true;
+
+        // other checks require widget to be of type GtkBin
+        if( !GTK_IS_BIN( widget ) ) return false;
+
+        // retrieve child
+        GtkWidget* child( gtk_bin_get_child( GTK_BIN( widget ) ) );
+        if( GTK_IS_TREE_VIEW( child ) || GTK_IS_ICON_VIEW( child ) ) return true;
+        else return false;
 
     }
 

@@ -98,9 +98,8 @@ namespace Oxygen
             bool isValid( void ) const
             { return _path && _column; }
 
-            //! returns true if column is the first one
-            bool isFirstColumn( GtkTreeView* tree_view ) const
-            { return _column && _column == gtk_tree_view_get_column( tree_view, 0 ); }
+            //! returns true if column is the last one
+            bool isLastVisibleColumn( GtkTreeView* ) const;
 
             //! returns true if column is the one that contains expander
             bool isExpanderColumn( GtkTreeView* treeView ) const
@@ -183,7 +182,8 @@ namespace Oxygen
             {
                 HasParent = 1<<0,
                 HasChildren = 1<<1,
-                IsLast = 1<<2
+                IsLast = 1<<2,
+                Reversed = 1<<3
             };
 
             //! constructor from CellInfo

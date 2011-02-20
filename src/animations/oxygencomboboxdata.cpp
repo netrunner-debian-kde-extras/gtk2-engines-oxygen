@@ -21,7 +21,6 @@
 #include "oxygencomboboxdata.h"
 #include "../oxygengtkutils.h"
 #include "../config.h"
-#include "../oxygenstyle.h"
 
 #include <gtk/gtk.h>
 #include <iostream>
@@ -34,12 +33,18 @@ namespace Oxygen
     void ComboBoxData::connect( GtkWidget* widget )
     {
         #if OXYGEN_DEBUG
-        std::cout << "Oxygen::ComboBoxData::connect - widget: " << widget << std::endl;
+        std::cerr << "Oxygen::ComboBoxData::connect - widget: " << widget << std::endl;
         #endif
 
         _target = widget;
         _stateChangeId.connect( G_OBJECT(widget), "state-changed", G_CALLBACK( stateChangeEvent ), this );
         initializeCellView( widget );
+
+        /*
+        need to force the wrap-width property to 0,
+        otherwise the "appears-as-list" flag is not respected, which additionaly breaks the widget rendering.
+        */
+        gtk_combo_box_set_wrap_width( GTK_COMBO_BOX( widget ), 0 );
 
     }
 
@@ -47,7 +52,7 @@ namespace Oxygen
     void ComboBoxData::disconnect( GtkWidget* widget )
     {
         #if OXYGEN_DEBUG
-        std::cout << "Oxygen::ComboBoxData::disconnect - widget: " << widget << std::endl;
+        std::cerr << "Oxygen::ComboBoxData::disconnect - widget: " << widget << std::endl;
         #endif
 
         _stateChangeId.disconnect();
@@ -71,9 +76,12 @@ namespace Oxygen
         assert( !_button._widget );
 
         _button._toggledId.connect( G_OBJECT(widget), "toggled", G_CALLBACK( childToggledEvent ), this );
+        _button._sizeAllocateId.connect( G_OBJECT(widget), "size-allocate", G_CALLBACK( childSizeAllocateEvent ), this );
         _button._widget = widget;
-
         registerChild( widget, false );
+
+        updateButtonEventWindow();
+        gtk_widget_queue_draw( widget );
 
     }
 
@@ -104,8 +112,9 @@ namespace Oxygen
         return;
 
     }
+
     //________________________________________________________________________________
-    void ComboBoxData::updateCellViewColor( void )
+    void ComboBoxData::updateCellViewColor( void ) const
     {
         // change background color
         if( _cell._widget )
@@ -113,51 +122,31 @@ namespace Oxygen
     }
 
     //________________________________________________________________________________
-    void ComboBoxData::initializeCellLayout( void )
+    void ComboBoxData::updateButtonEventWindow( void ) const
     {
 
-        if( _cellLayoutInitialized ) return;
-        if( !_cell._widget ) return;
+        // store local pointer to relevant widget
+        GtkWidget* widget( _button._widget );
 
-        GtkTreePath* path( gtk_cell_view_get_displayed_row( GTK_CELL_VIEW( _cell._widget ) ) );
-        if( !path ) return;
+        // check validity and type
+        if( !( widget && GTK_IS_BUTTON( widget ) ) ) return;
 
-        gtk_cell_view_set_background_color( GTK_CELL_VIEW( _cell._widget ), 0L );
+        // get window
+        #if GTK_CHECK_VERSION(2, 22, 0)
+        GdkWindow* window( gtk_button_get_event_window( GTK_BUTTON( widget ) ) );
+        #else
+        GdkWindow* window( GTK_BUTTON( widget )->event_window ) ;
+        #endif
 
-        GtkCellLayout* layout( GTK_CELL_LAYOUT( _cell._widget ) );
-        GList* renderers( gtk_cell_layout_get_cells( layout ) );
+        if( !window ) return;
 
-        // get maximum padding
-        unsigned short ypadmax(0);
-        for( GList* renderer = g_list_first(renderers); renderer; renderer = g_list_next(renderer) )
-        { ypadmax = std::max<unsigned short>( ypadmax, GTK_CELL_RENDERER( renderer->data )->ypad ); }
+        // offset
+        /* TODO: we should get it from the x-thickness property of the GtkFrame for this combobox */
+        const int offset = 4;
 
-        // assign to all renderers
-        for( GList* renderer = g_list_first(renderers); renderer; renderer = g_list_next(renderer) )
-        {
-            GtkCellRenderer* r( GTK_CELL_RENDERER( renderer->data ) );
-
-            int xpad, ypad;
-            gtk_cell_renderer_get_padding( r, &xpad, &ypad );
-
-            int xsize, ysize;
-            gtk_cell_renderer_get_size( r, _cell._widget, 0L, 0L, 0L, &xsize, &ysize );
-
-            gtk_cell_renderer_set_padding( r, std::max( 6, xpad ), ypadmax );
-            gtk_cell_renderer_set_fixed_size( r, xsize+6, ysize + ypadmax );
-        }
-
-        if( renderers ) g_list_free( renderers );
-
-        // need to trigger model changed
-        GtkTreeModel* model = gtk_combo_box_get_model( GTK_COMBO_BOX( _target ) );
-        GtkTreeIter iter;
-        gtk_combo_box_get_active_iter( GTK_COMBO_BOX( _target ), &iter );
-        gtk_tree_model_row_changed( model, path, &iter );
-        gtk_tree_path_free( path );
-
-        // mark as initialized
-        _cellLayoutInitialized = true;
+        // get allocation
+        const GtkAllocation& allocation( widget->allocation );
+        gdk_window_move_resize( window, allocation.x-offset, allocation.y, allocation.width+offset, allocation.height );
 
     }
 
@@ -169,12 +158,6 @@ namespace Oxygen
         else return;
 
         if( oldPressed != pressed() && _target ) gtk_widget_queue_draw( _target );
-
-        // save the combobox as currently popped up if pressed, and none as popped up if not
-        if( pressed() )
-            Style::instance().animations().comboBoxEngine().setPoppedUpWidget(widget);
-        else
-            Style::instance().animations().comboBoxEngine().setPoppedUpWidget(NULL);
 
     }
 
@@ -201,7 +184,7 @@ namespace Oxygen
         {
 
             #if OXYGEN_DEBUG
-            std::cout
+            std::cerr
                 << "Oxygen::ComboBoxData::registerChild -"
                 << " " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")"
                 << std::endl;
@@ -241,7 +224,7 @@ namespace Oxygen
     {
 
         #if OXYGEN_DEBUG
-        std::cout
+        std::cerr
             << "Oxygen::ComboBoxData::unregisterChild -"
             << " " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")"
             << std::endl;
@@ -267,7 +250,7 @@ namespace Oxygen
         if( !_widget ) return;
 
         #if OXYGEN_DEBUG
-        std::cout
+        std::cerr
             << "Oxygen::ComboBoxData::ChildData::disconnect -"
             << " " << _widget << " (" << G_OBJECT_TYPE_NAME( _widget ) << ")"
             << std::endl;
@@ -283,6 +266,7 @@ namespace Oxygen
     {
         if( !_widget ) return;
         _toggledId.disconnect();
+        _sizeAllocateId.disconnect();
         _pressed = false;
         _focus = false;
 
@@ -296,7 +280,7 @@ namespace Oxygen
         if( !_widget ) return;
 
         #if OXYGEN_DEBUG
-        std::cout << "Oxygen::ComboBoxData::HoverData::disconnect -"
+        std::cerr << "Oxygen::ComboBoxData::HoverData::disconnect -"
             << " " << _widget << " (" << G_OBJECT_TYPE_NAME( _widget ) << ")"
             << std::endl;
         #endif
@@ -313,7 +297,7 @@ namespace Oxygen
     gboolean ComboBoxData::childDestroyNotifyEvent( GtkWidget* widget, gpointer data )
     {
         #if OXYGEN_DEBUG
-        std::cout
+        std::cerr
             << "Oxygen::ComboBoxData::childDestroyNotifyEvent -"
             << " " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")"
             << std::endl;
@@ -334,12 +318,20 @@ namespace Oxygen
         return;
     }
 
+    //____________________________________________________________________________________________
+    void ComboBoxData::childSizeAllocateEvent( GtkWidget* widget, GtkAllocation* allocation, gpointer data)
+    {
+
+        static_cast<ComboBoxData*>(data)->updateButtonEventWindow();
+        return;
+    }
+
     //________________________________________________________________________________
     gboolean ComboBoxData::enterNotifyEvent( GtkWidget* widget, GdkEventCrossing*, gpointer data )
     {
 
         #if OXYGEN_DEBUG
-        std::cout << "Oxygen::ComboBoxData::enterNotifyEvent -"
+        std::cerr << "Oxygen::ComboBoxData::enterNotifyEvent -"
             << " " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")"
             << std::endl;
         #endif
@@ -353,7 +345,7 @@ namespace Oxygen
     {
 
         #if OXYGEN_DEBUG
-        std::cout << "Oxygen::ComboBoxData::leaveNotifyEvent -"
+        std::cerr << "Oxygen::ComboBoxData::leaveNotifyEvent -"
             << " " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")"
             << std::endl;
         #endif

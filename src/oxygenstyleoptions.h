@@ -23,6 +23,7 @@
 
 #include "oxygenflags.h"
 #include "oxygengtkutils.h"
+#include "oxygenpalette.h"
 
 #include <gtk/gtk.h>
 
@@ -40,10 +41,11 @@ namespace Oxygen
         NoFill = 1<<5,
         Vertical = 1<<6,
         Alpha = 1<<7,
-        Contrast = 1<<8,
-        Selected = 1<<9,
-        Disabled = 1<<10,
-        Menu = 1<<11
+        Round = 1<<8,
+        Contrast = 1<<9,
+        Selected = 1<<10,
+        Disabled = 1<<11,
+        Menu = 1<<12
     };
 
     class StyleOptions: public Flags<StyleOption>
@@ -74,6 +76,11 @@ namespace Oxygen
         //! destructor
         virtual ~StyleOptions( void )
         {}
+
+
+        //! color set
+        /*! it is used to pass custom colors to painting routines */
+        Palette::ColorSet _customColors;
 
     };
 

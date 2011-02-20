@@ -27,13 +27,13 @@
 #include <cairo.h>
 #include <gdk/gdk.h>
 
-namespace ColorUtils
-{
-    class Rgba;
-}
-
 namespace Oxygen
 {
+
+    namespace ColorUtils
+    {
+        class Rgba;
+    }
 
     //! draw arc with the parameters similar to those of QPainter::drawArc() (but using diameter instead of width&height). Also, angles are specified in degrees, not in 16ths of degrees
     void cairo_arc_qt( cairo_t*, double, double, double, double, double );
@@ -113,6 +113,31 @@ namespace Oxygen
     //! ellipse
     inline void gdk_cairo_ellipse_negative( cairo_t* context, GdkRectangle* rect )
     { cairo_ellipse_negative( context, rect->x, rect->y, rect->width, rect->height ); }
+
+    //@}
+
+    //!@name surfaces
+    //@{
+
+    //! get width for surface
+    int cairo_surface_get_width( cairo_surface_t* );
+
+    //! get height for surface
+    int cairo_surface_get_height( cairo_surface_t* );
+
+    //! deep copy
+    cairo_surface_t* cairo_surface_copy( cairo_surface_t* );
+
+    //! alpha channel
+    void cairo_surface_add_alpha( cairo_surface_t*, double );
+
+    //! saturation
+    /*! Inspired from gdk-pixbuf-util.c
+    Copyright (C) 1999 The Free Software Foundation
+    Authors: Federico Mena-Quintero <federico@gimp.org>
+             Cody Russell  <bratsche@gnome.org>
+    */
+    void cairo_image_surface_saturate( cairo_surface_t*, double );
 
     //@}
 

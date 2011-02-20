@@ -46,10 +46,6 @@ namespace Oxygen
     }
 
     //__________________________________________________________________
-    Style::Style( void )
-    {}
-
-    //__________________________________________________________________
     void Style::initialize( void )
     {
         _settings.initialize();
@@ -66,6 +62,67 @@ namespace Oxygen
     }
 
     //__________________________________________________________________
+    Cairo::Surface Style::tabCloseButton( const StyleOptions& options )
+    {
+
+        // active tab
+        if( options&Focus )
+        {
+            // create button
+            if( !_tabCloseButtons.active )
+            {
+                const std::string filename( std::string(GTK_THEME_DIR)+ "/special-icons/standardbutton-closetab-down-16.png" );
+                _tabCloseButtons.active = Cairo::Surface( cairo_image_surface_create_from_png( filename.c_str() ) );
+            }
+
+            return _tabCloseButtons.active;
+        }
+
+        // prelight
+        if( options&Hover )
+        {
+            // create button
+            if( !_tabCloseButtons.prelight )
+            {
+                const std::string filename( std::string(GTK_THEME_DIR) + "/special-icons/standardbutton-closetab-hover-16.png" );
+                _tabCloseButtons.prelight = Cairo::Surface( cairo_image_surface_create_from_png( filename.c_str() ) );
+            }
+
+            return _tabCloseButtons.prelight;
+
+        }
+
+        // normal or inactive
+        if( !_tabCloseButtons.normal )
+        {
+            const std::string filename( std::string(GTK_THEME_DIR) + "/special-icons/standardbutton-closetab-16.png" );
+            _tabCloseButtons.normal = Cairo::Surface( cairo_image_surface_create_from_png( filename.c_str() ) );
+        }
+
+        // inactive
+        if( (options&Disabled) && _tabCloseButtons.normal )
+        {
+
+            if( !_tabCloseButtons.inactive )
+            {
+
+                // make deep copy of the normal image
+                _tabCloseButtons.inactive = Cairo::Surface( cairo_surface_copy( _tabCloseButtons.normal ) );
+                cairo_surface_add_alpha(  _tabCloseButtons.inactive, 0.5 );
+                cairo_image_surface_saturate( _tabCloseButtons.inactive, 0.1 );
+
+            }
+
+            return _tabCloseButtons.inactive;
+
+        }
+
+        // fallback to normal
+        return _tabCloseButtons.normal;
+
+    }
+
+    //__________________________________________________________________
     void Style::fill( GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h, const ColorUtils::Rgba& color ) const
     {
 
@@ -78,7 +135,20 @@ namespace Oxygen
     }
 
     //__________________________________________________________________
-    void Style::drawSeparator( GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h, StyleOptions options )
+    void Style::outline( GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h, const ColorUtils::Rgba& color ) const
+    {
+
+        // define colors
+        Cairo::Context context( window, clipRect );
+        cairo_rectangle( context, 0.5+x, 0.5+y, w-1, h-1 );
+        cairo_set_line_width( context, 1 );
+        cairo_set_source( context, color );
+        cairo_stroke( context );
+
+    }
+
+    //__________________________________________________________________
+    void Style::drawSeparator( GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h, const StyleOptions& options )
     {
 
         // define colors
@@ -102,75 +172,93 @@ namespace Oxygen
     }
 
     //__________________________________________________________________
-    bool Style::renderWindowBackground( cairo_t* context, GdkWindow* window, GtkWidget* widget, GdkRectangle* clipRect, gint x, gint y, gint w, gint h ) const
+    bool Style::renderWindowBackground(
+        cairo_t* context, GdkWindow* window, GtkWidget* widget,
+        GdkRectangle* clipRect, gint x, gint y, gint w, gint h,
+        const StyleOptions& options, TileSet::Tiles tiles )
     {
-
-        // TODO: render custom color for widgets with modify_bg set (like white viewport bin in ccsm)
 
         bool needToDestroyContext;
 
-        // no background for gnome applets
-        if( widget )
-        {
-            // external applets
-            if( Gtk::gtk_widget_is_panel_applet( widget ) )
-            { return false; }
-
-            // internal applets
-            GtkWidget *parent = gtk_widget_get_parent( widget );
-            if( parent && Gtk::gtk_widget_is_panel_applet( parent ) )
-            { return false; }
-        }
-
         // define colors
-        ColorUtils::Rgba base(settings().palette().color( Palette::Window ) );
+        ColorUtils::Rgba base( color( Palette::Window, options ) );
 
         // the hard-coded metrics are copied for
         // kdebase/workspace/libs/oxygen/oxygenhelper.cpp
         // vertical shift to account for window decoration
         const int yShift = 23;
 
-        gint ww, wh;
-        gint wx, wy;
+        // toplevel window information and relative positioning
+        gint ww(0), wh(0);
+        gint wx(0), wy(0);
 
         // if we aren't going to draw window decorations...
         if(!context)
         {
-            // draw flat background for OpenOffice
-            if( Style::instance().settings().applicationName().isOpenOffice() )
-            {
-                Cairo::Context context(window,clipRect);
-                cairo_set_source(context,base);
-                cairo_rectangle(context,x,y,w,h);
-                cairo_fill(context);
-                return true;
-            }
-
-
-            // get window dimension and position
-            if( !Gtk::gdk_map_to_toplevel( window, widget, &wx, &wy, &ww, &wh, true ) )
-            { return false; }
-
-            wy += yShift;
-
-            // translate to toplevel coordinates
-            x+=wx;
-            y+=wy;
 
             // create context and translate to toplevel coordinates
             // make it the old good way since context is cairo_t* instead Cairo::Context
-            context=gdk_cairo_create(window);
+            context = gdk_cairo_create(window);
             needToDestroyContext=true;
-            if(clipRect)
+
+            if( clipRect )
             {
                 cairo_rectangle(context,clipRect->x,clipRect->y,clipRect->width,clipRect->height);
                 cairo_clip(context);
             }
+
+            // add hole if required (this can be done before translating the context
+            if( options&NoFill )
+            {
+                // create a rounded-rect antimask for renderHoleBackground
+                GdkRectangle mask = {x+2, y+1, w-4, h-3 };
+                const double maskRadius = 3.5;
+                Corners corners( CornersNone );
+                if( tiles & TileSet::Left )
+                {
+                    mask.x += Entry_SideMargin;
+                    mask.width -= Entry_SideMargin;
+                    if( tiles & TileSet::Top ) corners |= CornersTopLeft;
+                    if( tiles & TileSet::Bottom ) corners |= CornersBottomLeft;
+                }
+
+                if( tiles & TileSet::Right )
+                {
+                    mask.width -= Entry_SideMargin;
+                    if( tiles & TileSet::Top ) corners |= CornersTopRight;
+                    if( tiles & TileSet::Bottom ) corners |= CornersBottomRight;
+                }
+
+                // set clipping mask
+                gdk_cairo_rounded_rectangle_negative(context,&mask,maskRadius,CornersAll);
+                cairo_rectangle(context,x,y,w,h);
+                cairo_clip(context);
+
+            }
+
+            // get window dimension and position
+            if( !Gtk::gdk_map_to_toplevel( window, widget, &wx, &wy, &ww, &wh, true ) )
+            {
+
+                // flat painting for all other apps
+                cairo_set_source(context,base);
+                cairo_rectangle(context,x,y,w,h);
+                cairo_fill(context);
+                cairo_destroy(context);
+                return true;
+
+            }
+
+            // translate to toplevel coordinates
+            wy += yShift;
+            x+=wx;
+            y+=wy;
+
             // no sense in context saving since it will be destroyed
             cairo_translate( context, -wx, -wy );
-        }
-        else
-        {
+
+        } else {
+
             // drawing window decorations, so logic is simplified
             ww=w;
             wh=h;
@@ -179,7 +267,7 @@ namespace Oxygen
             cairo_translate(context,x,y);
             x=0;
             y=0;
-            // wx and wy aren't set since clipRect will be 0L if we are here, and wx and wy are only used with clipRect
+
         }
 
         // split
@@ -207,10 +295,10 @@ namespace Oxygen
         if( gdk_rectangle_intersect( &rect, &upperRect, &upperRect ) )
         {
 
-            Cairo::Pattern pattern( verticalGradient( base, 0, splitY ) );
-
+            const Cairo::Surface& surface( helper().verticalGradient( base, splitY ) );
+            cairo_set_source_surface( context, surface, 0, 0 );
+            cairo_pattern_set_extend( cairo_get_source( context ), CAIRO_EXTEND_REPEAT );
             gdk_cairo_rectangle( context, &upperRect );
-            cairo_set_source( context, pattern );
             cairo_fill( context );
 
         }
@@ -235,33 +323,30 @@ namespace Oxygen
         if( gdk_rectangle_intersect( &rect, &radialRect, &radialRect ) )
         {
 
-            // get pattern
-            Cairo::Pattern pattern( radialGradient( base, 64, patternHeight - 64, 64 ) );
+            const Cairo::Surface& surface( helper().radialGradient( base, 64 ) );
+            cairo_set_source_surface( context, surface, 0, 0 );
 
             // add matrix transformation
             cairo_matrix_t transformation;
             cairo_matrix_init_identity( &transformation );
             cairo_matrix_scale( &transformation, 128.0/radialW, 1.0 );
             cairo_matrix_translate( &transformation, -(ww - radialW)/2, 0 );
-            cairo_pattern_set_matrix( pattern, &transformation );
+            cairo_pattern_set_matrix( cairo_get_source( context ), &transformation );
 
-            // fill
             gdk_cairo_rectangle( context, &radialRect );
-            cairo_set_source( context, pattern );
             cairo_fill( context );
 
         }
 
-        if(needToDestroyContext)
-            cairo_destroy(context);
-        else
-            cairo_restore(context);
+        if(needToDestroyContext) cairo_destroy(context);
+        else cairo_restore(context);
+
         return true;
 
     }
 
     //__________________________________________________________________
-    void Style::renderMenuBackground( GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h, StyleOptions options ) const
+    bool Style::renderMenuBackground( GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h, const StyleOptions& options ) const
     {
         // define colors
         ColorUtils::Rgba base(settings().palette().color( Palette::Window ) );
@@ -271,9 +356,8 @@ namespace Oxygen
         // get window dimension and position
         gint ww, wh;
         gint wx, wy;
-        //if( !Gtk::gdk_map_to_toplevel( window, widget, &wx, &wy, &ww, &wh, true ) )
         if( !Gtk::gdk_map_to_toplevel( window, 0L, &wx, &wy, &ww, &wh, true ) )
-        { return; }
+        { return false; }
 
         // translate to toplevel coordinates
         x+=wx;
@@ -284,13 +368,12 @@ namespace Oxygen
         cairo_translate( context, -wx, -wy );
         const bool hasAlpha( options&Alpha );
         const bool isMenu( options&Menu );
-        const bool isMozilla( settings().applicationName().isMozilla() );
-        const bool isOpenOffice( settings().applicationName().isOpenOffice() );
+        const bool round( options&Round );
 
         GdkRectangle rect = { x, y, w, h };
 
         // paint translucent first
-        if( hasAlpha && !isOpenOffice )
+        if( hasAlpha )
         {
             cairo_rectangle( context, 0, 0, ww, wh );
             cairo_set_operator( context, CAIRO_OPERATOR_SOURCE );
@@ -299,7 +382,7 @@ namespace Oxygen
         }
 
         const int splitY( std::min(200, 3*wh/4 ) );
-        const int verticalOffset( (isMozilla||isOpenOffice||!isMenu) ? 0:Menu_VerticalOffset );
+        const int verticalOffset( (isMenu && round) ? Menu_VerticalOffset:0 );
 
         GdkRectangle upperRect = { 0, verticalOffset, ww, splitY - verticalOffset };
         if( gdk_rectangle_intersect( &rect, &upperRect, &upperRect ) )
@@ -309,7 +392,7 @@ namespace Oxygen
             cairo_pattern_add_color_stop( pattern, 0, top );
             cairo_pattern_add_color_stop( pattern, 1, bottom );
 
-            gdk_cairo_rounded_rectangle( context, &upperRect, 3.5, isMozilla ? CornersNone:CornersTop );
+            gdk_cairo_rounded_rectangle( context, &upperRect, 3.5, round ? CornersTop:CornersNone );
             cairo_set_source( context, pattern );
             cairo_fill( context );
 
@@ -320,18 +403,18 @@ namespace Oxygen
         {
 
             // lower part
-            gdk_cairo_rounded_rectangle( context, &lowerRect, 3.5, isMozilla ? CornersNone:CornersBottom );
+            gdk_cairo_rounded_rectangle( context, &lowerRect, 3.5, round ? CornersBottom:CornersNone );
             cairo_set_source( context, bottom );
             cairo_fill( context );
 
         }
 
-        return;
+        return true;
 
     }
 
     //__________________________________________________________________
-    void Style::renderTooltipBackground( GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h, StyleOptions options ) const
+    void Style::renderTooltipBackground( GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h, const StyleOptions& options ) const
     {
 
         // define colors
@@ -345,8 +428,7 @@ namespace Oxygen
 
         // paint translucent first
         const bool hasAlpha( (options&Alpha) );
-        const bool isMozilla( settings().applicationName().isMozilla() );
-        const bool isOpenOffice( settings().applicationName().isOpenOffice() );
+        bool round( GDK_IS_WINDOW( window ) && (options&Round) );
 
         if( hasAlpha )
         {
@@ -369,7 +451,7 @@ namespace Oxygen
             cairo_pattern_add_color_stop( pattern, 0, top );
             cairo_pattern_add_color_stop( pattern, 1, bottom );
 
-            gdk_cairo_rounded_rectangle( context, &rect, 4, (isMozilla||isOpenOffice) ? CornersNone:CornersAll );
+            gdk_cairo_rounded_rectangle( context, &rect, 4, round ? CornersAll:CornersNone );
             cairo_set_source( context, pattern );
             cairo_fill( context );
 
@@ -381,7 +463,7 @@ namespace Oxygen
             cairo_pattern_add_color_stop( pattern, 0.5, ColorUtils::lightColor( bottom ) );
             cairo_pattern_add_color_stop( pattern, 0.9, bottom );
 
-            cairo_rounded_rectangle( context, 0.5, 0.5, w-1, h-1, 4, (isMozilla||isOpenOffice) ? CornersNone:CornersAll );
+            cairo_rounded_rectangle( context, 0.5, 0.5, w-1, h-1, 4, round ? CornersAll:CornersNone );
             cairo_set_line_width( context, 1.0 );
             cairo_set_source( context, pattern );
             cairo_stroke( context );
@@ -392,7 +474,7 @@ namespace Oxygen
     }
 
     //__________________________________________________________________
-    void Style::renderHeaderBackground( GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h ) const
+    void Style::renderHeaderBackground( GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h )
     {
 
         // load color
@@ -400,13 +482,7 @@ namespace Oxygen
 
         // render normal window background
         if( !renderWindowBackground( window, clipRect, x, y, w, h ) )
-        {
-            // if failed, fallback to flat background
-            Cairo::Context context( window, clipRect );
-            cairo_rectangle( context, x, y, w, h );
-            cairo_set_source( context, base );
-            cairo_fill( context );
-        }
+        { fill( window, clipRect, x, y, w, h, base ); }
 
         // render lines
         renderHeaderLines( window, clipRect, x, y, w, h );
@@ -449,7 +525,7 @@ namespace Oxygen
     }
 
     //____________________________________________________________________________________
-    void Style::renderTreeLines( GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h, const Gtk::CellInfoFlags& cellFlags, StyleOptions options ) const
+    void Style::renderTreeLines( GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h, const Gtk::CellInfoFlags& cellFlags, const StyleOptions& options ) const
     {
 
         // define pen color
@@ -463,13 +539,22 @@ namespace Oxygen
         cairo_set_source( context, base );
         cairo_set_line_width( context, 1.0 );
 
+        const bool reversed( cellFlags._flags & Gtk::CellInfoFlags::Reversed );
+
         int cellIndent( cellFlags._levelIndent + cellFlags._expanderSize + 4 );
         int xStart( x + cellIndent/2 );
+
+        if( reversed ) {
+
+            xStart += w - cellIndent;
+            cellIndent *= -1;
+
+        }
+
         for( unsigned int i=0; i< cellFlags._depth; ++i  )
         {
 
             const bool isLastCell( cellFlags._isLast[i] );
-
             const bool last( i == cellFlags._depth -1 );
             double xCenter = xStart;
 
@@ -494,18 +579,39 @@ namespace Oxygen
                     }
 
                     // horizontal line
-                    cairo_move_to( context, xCenter + int( cellFlags._expanderSize/3 ), yCenter + 0.5 );
-                    cairo_line_to( context, xCenter + cellFlags._expanderSize*2/3, yCenter + 0.5 );
+                    if( reversed )
+                    {
+
+                        cairo_move_to( context, xCenter + 1 - int( cellFlags._expanderSize/3 ), yCenter + 0.5 );
+                        cairo_line_to( context, xCenter + 1  - cellFlags._expanderSize*2/3, yCenter + 0.5 );
+
+                    } else {
+
+                        cairo_move_to( context, xCenter + int( cellFlags._expanderSize/3 ), yCenter + 0.5 );
+                        cairo_line_to( context, xCenter + cellFlags._expanderSize*2/3, yCenter + 0.5 );
+
+                    }
 
                 } else {
 
+                    // vertical line
                     cairo_move_to( context, xCenter + 0.5, y );
                     if( isLastCell ) cairo_line_to( context, xCenter + 0.5, yCenter );
                     else cairo_line_to( context, xCenter + 0.5, y+h );
 
                     // horizontal line
-                    cairo_move_to( context, xCenter, yCenter + 0.5 );
-                    cairo_line_to( context, xCenter + cellFlags._expanderSize*2/3, yCenter + 0.5 );
+                    if( reversed )
+                    {
+
+                        cairo_move_to( context, xCenter + 1 , yCenter + 0.5 );
+                        cairo_line_to( context, xCenter + 1  - cellFlags._expanderSize*2/3, yCenter + 0.5 );
+
+                    } else {
+
+                        cairo_move_to( context, xCenter, yCenter + 0.5 );
+                        cairo_line_to( context, xCenter + cellFlags._expanderSize*2/3, yCenter + 0.5 );
+
+                    }
 
                 }
 
@@ -533,133 +639,21 @@ namespace Oxygen
     bool Style::renderHoleBackground(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, TileSet::Tiles tiles ) const
+        gint x, gint y, gint w, gint h, TileSet::Tiles tiles )
     {
 
         // do nothing if not enough room
         if( w < 14 || h < 14 )  return false;
 
         /*
-        this code is the same as in renderWindowBackground
-        except that a mask is added to each portion of the background
-        TODO: make as much code in common as possible between
-        the two, to avoid code duplication.
+        pass "NoFill" option to renderWindowBackground,
+        to indicate one must make a "hole" in the center
         */
-
-        // define colors
-        ColorUtils::Rgba base(settings().palette().color( Palette::Window ) );
-
-        // get window size and height
-        gint ww, wh;
-        gint wx, wy;
-        if( !Gtk::gdk_map_to_toplevel( window, &wx, &wy, &ww, &wh, true ) )
-        { return false; }
-
-        // do nothing if window dimensions could not be found
-        if( ww < 0 || wh < 0 ) return false;
-
-        // the hard-coded metrics are copied for
-        // kdebase/workspace/libs/oxygen/oxygenhelper.cpp
-        // vertical shift to account for window decoration
-        const int yShift = 23;
-        wy += yShift;
-
-        // translate to toplevel coordinates
-        x+=wx;
-        y+=wy;
-
-        // create context and translate to toplevel coordinates
-        Cairo::Context context( window, clipRect );
-        cairo_translate( context, -wx, -wy );
-
-        GdkRectangle rect = { x, y, w, h+1 };
-        GdkRectangle mask = {x+2, y+1, w-4, h-2 };
-        const double maskRadius = 3.5;
-        Corners corners( CornersNone );
-        if( tiles & TileSet::Top )
-        {
-            if( tiles & TileSet::Left ) corners |= CornersTopLeft;
-            if( tiles & TileSet::Right ) corners |= CornersTopRight;
-        }
-
-        if( tiles & TileSet::Bottom )
-        {
-            if( tiles & TileSet::Left ) corners |= CornersBottomLeft;
-            if( tiles & TileSet::Right ) corners |= CornersBottomRight;
-        }
-
-        // the hard-coded metrics are copied for
-        // kdebase/workspace/libs/oxygen/oxygenhelper.cpp
-        const int splitY( std::min(300, 3*wh/4 ) );
-
-        // upper rect
-        GdkRectangle upperRect = { 0, 0, ww, splitY };
-        if( gdk_rectangle_intersect( &rect, &upperRect, &upperRect ) )
-        {
-
-            cairo_save( context );
-            gdk_cairo_rectangle( context, &upperRect );
-            cairo_clip( context );
-
-            Cairo::Pattern pattern( verticalGradient( base, -yShift, splitY-yShift ) );
-            cairo_set_source( context, pattern );
-
-            gdk_cairo_rectangle( context, &upperRect );
-            gdk_cairo_rounded_rectangle_negative( context, &mask, maskRadius, corners );
-            cairo_fill( context );
-
-            cairo_restore( context );
-        }
-
-
-        // lower rect
-        GdkRectangle lowerRect = { 0, splitY, ww, wh - splitY + yShift };
-        if( gdk_rectangle_intersect( &rect, &lowerRect, &lowerRect ) )
-        {
-
-            cairo_save( context );
-            gdk_cairo_rectangle( context, &lowerRect );
-            cairo_clip( context );
-
-            ColorUtils::Rgba bottom( ColorUtils::backgroundBottomColor( base ) );
-            cairo_set_source( context, bottom );
-            gdk_cairo_rectangle( context, &lowerRect );
-            gdk_cairo_rounded_rectangle_negative( context, &mask, maskRadius, corners );
-            cairo_fill( context );
-
-            cairo_restore( context );
-        }
-
-        // radial pattern
-        const int patternHeight = 64;
-        const int radialW( std::min(600, ww ) );
-
-        GdkRectangle radialRect = {  (ww - radialW)/2, 0, radialW, patternHeight };
-        if( gdk_rectangle_intersect( &rect, &radialRect, &radialRect ) )
-        {
-
-            // get pattern
-            Cairo::Pattern pattern( radialGradient( base, 64, patternHeight - 64, 64 ) );
-
-            // add matrix transformation
-            cairo_matrix_t transformation;
-            cairo_matrix_init_identity( &transformation );
-            cairo_matrix_scale( &transformation, 128.0/radialW, 1.0 );
-            cairo_matrix_translate( &transformation, -(ww - radialW)/2, 0 );
-            cairo_pattern_set_matrix( pattern, &transformation );
-
-            gdk_cairo_rectangle( context, &radialRect );
-            gdk_cairo_rounded_rectangle_negative( context, &mask, maskRadius, corners );
-            cairo_set_source( context, pattern );
-            cairo_fill( context );
-        }
-
-        return true;
-
+        return renderWindowBackground( window, clipRect, x, y, w, h, NoFill, tiles);
     }
 
     //__________________________________________________________________
-    void Style::renderSplitter( GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h, StyleOptions options ) const
+    void Style::renderSplitter( GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h, const StyleOptions& options ) const
     {
 
         // orientation
@@ -711,9 +705,9 @@ namespace Oxygen
             int center = ( w-( ngroups-1 )*250 )/2 + x;
             for( int k = 0; k < ngroups; k++, center += 250 )
             {
-                helper().renderDot( context, base, center-3, y-1 );
-                helper().renderDot( context, base, center, y-1 );
-                helper().renderDot( context, base, center+3, y-1 );
+                helper().renderDot( context, base, center-3, y );
+                helper().renderDot( context, base, center, y );
+                helper().renderDot( context, base, center+3, y );
             }
 
         } else {
@@ -736,7 +730,7 @@ namespace Oxygen
     void Style::renderProgressBarHole(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, StyleOptions options )
+        gint x, gint y, gint w, gint h, const StyleOptions& options )
     {
 
         const Palette::Group group( options&Disabled ? Palette::Disabled : Palette::Active );
@@ -751,7 +745,7 @@ namespace Oxygen
     void Style::renderProgressBarHandle(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, StyleOptions options )
+        gint x, gint y, gint w, gint h, const StyleOptions& options )
     {
 
         // colors
@@ -759,8 +753,15 @@ namespace Oxygen
         const ColorUtils::Rgba base( settings().palette().color( Palette::Active, Palette::Window ) );
         const ColorUtils::Rgba glow( settings().palette().color( group, Palette::Selected ) );
 
+        /* need to adjust clipRect */
+        if( clipRect )
+        {
+            clipRect->y -= 2;
+            clipRect->height += 4;
+        }
+
         // context
-        Cairo::Context context( window );
+        Cairo::Context context( window, clipRect );
 
         // validate rect
         if(w<0 || h<0) return;
@@ -769,12 +770,12 @@ namespace Oxygen
         const int indicatorSize( (options&Vertical ? h:w ) );
         if( indicatorSize >= 4 )
         {
-            // get pixbuf
-            GdkPixbuf* pixbuf( helper().progressBarIndicator( base, glow, w, h ) );
+            // get surface
+            const Cairo::Surface& surface( helper().progressBarIndicator( base, glow, w, h ) );
             cairo_translate( context, -1, -2 );
             cairo_translate( context, x, y );
-            cairo_rectangle( context, 0, 0, gdk_pixbuf_get_width( pixbuf ), gdk_pixbuf_get_height( pixbuf ) );
-            gdk_cairo_set_source_pixbuf( context, pixbuf, 0, 0 );
+            cairo_rectangle( context, 0, 0, cairo_surface_get_width( surface ), cairo_surface_get_height( surface ) );
+            cairo_set_source_surface( context, surface, 0, 0 );
             cairo_fill( context );
         }
 
@@ -784,7 +785,7 @@ namespace Oxygen
     void Style::renderScrollBarHole(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, StyleOptions options )
+        gint x, gint y, gint w, gint h, const StyleOptions& options )
     {
 
         // colors
@@ -801,7 +802,7 @@ namespace Oxygen
     void Style::renderScrollBarHandle(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, StyleOptions options ) const
+        gint x, gint y, gint w, gint h, const StyleOptions& options ) const
     {
 
         // store colors
@@ -953,7 +954,7 @@ namespace Oxygen
     void Style::renderToolBarHandle(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, StyleOptions options ) const
+        gint x, gint y, gint w, gint h, const StyleOptions& options ) const
     {
 
         const bool vertical( options & Vertical );
@@ -987,20 +988,18 @@ namespace Oxygen
     }
 
     //__________________________________________________________________
-    void Style::drawFloatFrame( cairo_t* context, GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h, StyleOptions options ) const
+    void Style::drawFloatFrame( cairo_t* context, GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h, const StyleOptions& options, Palette::Role role ) const
     {
 
         // define colors
-        ColorUtils::Rgba base(settings().palette().color( Palette::Window ) );
+        ColorUtils::Rgba base(settings().palette().color( role ) );
         ColorUtils::Rgba light( ColorUtils::lightColor( base ) );
         ColorUtils::Rgba dark( ColorUtils::darkColor( ColorUtils::backgroundBottomColor( base ) ) );
 
         const bool hasAlpha( options&Alpha );
         const bool isMenu( options&Menu );
-        const bool isMozilla( settings().applicationName().isMozilla() );
-        const bool isOpenOffice( settings().applicationName().isOpenOffice() );
         const bool drawUglyShadow( !hasAlpha );
-        const bool rounded( !(isMozilla||isOpenOffice) );
+        const bool rounded( options&Round );
 
         // if we aren't drawing window decoration
         if( !context )
@@ -1035,9 +1034,11 @@ namespace Oxygen
 
             cairo_set_line_width(context,1);
 
-            if( options&Focus ) // window is active - it's a glow, not a shadow
+            if( options&Focus )
             {
-                ColorUtils::Rgba frameColor(0x54/255.,0xa7/255.,0xf0/255.); // FIXME: where should this color be taken from?
+
+                // window is active - it's a glow, not a shadow
+                ColorUtils::Rgba frameColor( settings().palette().color( Palette::ActiveWindowBackground ) );
                 ColorUtils::Rgba glow=ColorUtils::mix(ColorUtils::Rgba(0.5,0.5,0.5),frameColor,0.7);
                 cairo_set_source(context,glow);
 
@@ -1100,6 +1101,7 @@ namespace Oxygen
                     cairo_stroke( context );
 
                 } else {
+
                     cairo_set_source( context, ColorUtils::darken( shadow, 0.2 ));
                     cairo_move_to( context, x-0.5, y-0.5 ); cairo_line_to( context, x+w+0.5, y-0.5 );
                     cairo_stroke( context );
@@ -1112,6 +1114,7 @@ namespace Oxygen
                     cairo_set_source( context, ColorUtils::darken( shadow, 0.6 ));
                     cairo_move_to( context, x-0.5, y+h+0.5 ); cairo_line_to( context, x+w+0.5, y+h+0.5 );
                     cairo_stroke( context );
+
                 }
             }
         }
@@ -1122,14 +1125,12 @@ namespace Oxygen
         {
 
             cairo_pattern_add_color_stop( pattern, 1, ColorUtils::alphaColor( dark, 0 ) );
-            cairo_rectangle( context, double(x)+0.5, double(y)+0.5, w-1, h-1 );
 
         } else {
 
             if( h > 20.5 ) cairo_pattern_add_color_stop( pattern, std::max( 0.0, 1.0 - 12.0/( double(h)-5.5 ) ), ColorUtils::alphaColor( light, 0.5 ) );
             else if( h > 8.5 ) cairo_pattern_add_color_stop( pattern, std::max( 0.0, 3.0/( double(h)-5.5 ) ), ColorUtils::alphaColor( light, 0.5 ) );
             cairo_pattern_add_color_stop( pattern, 1, ColorUtils::Rgba::transparent( light ) );
-            cairo_rounded_rectangle( context, double(x)+0.5, double(y)+0.5, w-1, h-1, 3.5 );
 
         }
 
@@ -1144,32 +1145,30 @@ namespace Oxygen
     void Style::renderButtonSlab(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, StyleOptions options, TileSet::Tiles tiles,
-        const ColorUtils::Rgba& color
+        gint x, gint y, gint w, gint h,
+        const StyleOptions& options,
+        TileSet::Tiles tiles
         )
     {
 
         // flat buttons are only rendered with a simple Rect, and only when either focused or sunken
         const Palette::Group group( options&Disabled ? Palette::Disabled : Palette::Active );
+
+        // glow color (depending on hover/glow
+        const ColorUtils::Rgba glow( slabShadowColor( options ) );
+
         if( options & Flat )
         {
             if( options & Sunken )
             {
 
                 Cairo::Context context( window, clipRect );
-                ColorUtils::Rgba base( color.isValid() ? color : settings().palette().color( group, Palette::Window ) );
+                const ColorUtils::Rgba base( color( group, Palette::Window, options ) );
+                if( glow.isValid() ) helper().holeFocused( base, glow, 0, 7 ).render( context, x, y, w, h );
+                else helper().hole( base, 0, 7 ).render( context, x, y, w, h );
 
-                if( options & Hover )
-                {
+            } else if( glow.isValid() ) {
 
-                    const ColorUtils::Rgba glow( settings().palette().color( group, Palette::Hover ) );
-                    helper().holeFocused( base, glow, 0, 7 ).render( context, x, y, w, h );
-
-                } else helper().hole( base, 0, 7 ).render( context, x, y, w, h );
-
-            } else if( options&Hover ) {
-
-                const ColorUtils::Rgba glow( settings().palette().color( group, Palette::Focus ) );
                 Cairo::Context context( window, clipRect );
                 helper().slitFocused( glow ).render( context, x, y, w, h, tiles );
 
@@ -1179,21 +1178,28 @@ namespace Oxygen
 
         }
 
-        // do nothing if not enough room
-        if( w < 14 ) return;
+        // forces minimum size to 14x14
+        if( w < 14 || h < 14 )
+        {
+            GdkRectangle parent( Gtk::gdk_rectangle( x, y, w, h ) );
+            GdkRectangle child( Gtk::gdk_rectangle( x, y, std::max( w, 14), std::max( h, 14 ) ) );
+            centerRect( &parent, &child );
+            x = child.x;
+            y = child.y;
+            w = child.width;
+            h = child.height;
+            clipRect = 0L;
+        }
+
 
         // define colors
-        ColorUtils::Rgba base;
+        ColorUtils::Rgba base( color( group, Palette::Button, options ) );
         if( options&Blend )
         {
 
             gint wh, wy;
             Gtk::gdk_map_to_toplevel( window, 0L, &wy, 0L, &wh );
-            base = ColorUtils::backgroundColor( color.isValid() ? color : settings().palette().color( group, Palette::Button ), wh, y+wy+h/2 );
-
-        } else {
-
-            base = color.isValid() ? color : settings().palette().color( group, Palette::Button );
+            base = ColorUtils::backgroundColor( base, wh, y+wy+h/2 );
 
         }
 
@@ -1227,25 +1233,13 @@ namespace Oxygen
 
             helper().slabSunken( base, 0 ).render( context, x, y, w, h, tiles );
 
+        } else if( glow.isValid() ) {
+
+            helper().slabFocused( base, glow, 0 ).render( context, x, y, w, h, tiles );
+
         } else {
 
-            const bool enabled( !(options&Disabled ) );
-            if( enabled && (options & Hover) )
-            {
-
-                ColorUtils::Rgba glow( settings().palette().color( Palette::Hover ) );
-                helper().slabFocused( base, glow, 0 ).render( context, x, y, w, h, tiles );
-
-            } else if( enabled && (options & Focus) ) {
-
-                ColorUtils::Rgba glow( settings().palette().color( Palette::Focus) );
-                helper().slabFocused( base, glow, 0 ).render( context, x, y, w, h, tiles );
-
-            } else {
-
-                helper().slab( base, 0 ).render( context, x, y, w, h, tiles );
-
-            }
+            helper().slab( base, 0 ).render( context, x, y, w, h, tiles );
 
         }
 
@@ -1255,7 +1249,7 @@ namespace Oxygen
     void Style::renderSlab(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, const Gtk::Gap& gap, StyleOptions options )
+        gint x, gint y, gint w, gint h, const Gtk::Gap& gap, const StyleOptions& options )
     {
 
         // define colors
@@ -1265,11 +1259,11 @@ namespace Oxygen
 
             gint wh, wy;
             Gtk::gdk_map_to_toplevel( window, 0L, &wy, 0L, &wh );
-            base = ColorUtils::backgroundColor( settings().palette().color( Palette::Button ), wh, y+wy+h/2 );
+            base = ColorUtils::backgroundColor( settings().palette().color( Palette::Window ), wh, y+wy+h/2 );
 
         } else {
 
-            base = settings().palette().color( Palette::Button );
+            base = settings().palette().color( Palette::Window );
 
         }
 
@@ -1317,7 +1311,7 @@ namespace Oxygen
     void Style::renderCheckBox(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, GtkShadowType shadow, StyleOptions options )
+        gint x, gint y, gint w, gint h, GtkShadowType shadow, const StyleOptions& options )
     {
 
         // define checkbox rect
@@ -1373,8 +1367,8 @@ namespace Oxygen
             if( shadow == GTK_SHADOW_IN ) cairo_set_line_width( context, 2.0 );
 
             Palette::Group group( (options&Disabled) ? Palette::Disabled : Palette::Active );
-            const ColorUtils::Rgba& color( settings().palette().color( group, ( options&Sunken ) ? Palette::WindowText : Palette::ButtonText ) );
-            const ColorUtils::Rgba& background( settings().palette().color( ( options&Sunken ) ? Palette::Window : Palette::Button ) );
+            const ColorUtils::Rgba& color( settings().palette().color( group, ( options&Flat ) ? Palette::WindowText : Palette::ButtonText ) );
+            const ColorUtils::Rgba& background( settings().palette().color( ( options&Flat ) ? Palette::Window : Palette::Button ) );
             const ColorUtils::Rgba& base( ColorUtils::decoColor( background, color ) );
             const ColorUtils::Rgba& contrast( ColorUtils::lightColor( background ) );
 
@@ -1459,7 +1453,7 @@ namespace Oxygen
     void Style::renderRadioButton(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, GtkShadowType shadow, StyleOptions options )
+        gint x, gint y, gint w, gint h, GtkShadowType shadow, const StyleOptions& options )
     {
 
         // define checkbox rect
@@ -1502,14 +1496,14 @@ namespace Oxygen
         const ColorUtils::Rgba glow( slabShadowColor( options ) );
 
         // get the pixmap
-        GdkPixbuf* pixbuf( glow.isValid() ? helper().roundSlabFocused( base, glow, 0, tileSize ):helper().roundSlab( base, 0, tileSize ) );
+        const Cairo::Surface& surface( glow.isValid() ? helper().roundSlabFocused( base, glow, 0, tileSize ):helper().roundSlab( base, 0, tileSize ) );
 
         // create context
         Cairo::Context context( window, clipRect );
         cairo_save( context );
         cairo_translate( context, x, y );
         cairo_rectangle( context, 0, 0, child.width, child.height );
-        gdk_cairo_set_source_pixbuf( context, pixbuf, 0, 0 );
+        cairo_set_source_surface( context, surface, 0, 0 );
         cairo_fill( context );
         cairo_restore( context );
 
@@ -1559,7 +1553,7 @@ namespace Oxygen
     void Style::renderHole(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, const Gtk::Gap& gap, StyleOptions options,
+        gint x, gint y, gint w, gint h, const Gtk::Gap& gap, const StyleOptions& options,
         TileSet::Tiles tiles )
     {
 
@@ -1607,7 +1601,7 @@ namespace Oxygen
     void Style::renderDockFrame(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, const Gtk::Gap& gap, StyleOptions options )
+        gint x, gint y, gint w, gint h, const Gtk::Gap& gap, const StyleOptions& options )
     {
 
         // do nothing if not enough room
@@ -1620,11 +1614,11 @@ namespace Oxygen
 
             gint wh, wy;
             Gtk::gdk_map_to_toplevel( window, 0L, &wy, 0L, &wh );
-            base = ColorUtils::backgroundColor( settings().palette().color( Palette::Button ), wh, y+wy+h/2 );
+            base = ColorUtils::backgroundColor( settings().palette().color( Palette::Window ), wh, y+wy+h/2 );
 
         } else {
 
-            base = settings().palette().color( Palette::Button );
+            base = settings().palette().color( Palette::Window );
 
         }
 
@@ -1639,7 +1633,7 @@ namespace Oxygen
         GdkWindow* window,
         GdkRectangle* clipRect,
         GtkWidget* widget,
-        gint x, gint y, gint w, gint h, StyleOptions options )
+        gint x, gint y, gint w, gint h, const StyleOptions& options )
     {
         ColorUtils::Rgba base;
         gint wh, wy;
@@ -1712,32 +1706,37 @@ namespace Oxygen
         bool hasSubMenu( isInMenu && GTK_IS_MENU_ITEM( widget ) && gtk_menu_item_get_submenu( GTK_MENU_ITEM( widget ) ) );
         if( hasSubMenu )
         {
-
-            // draw item rect in a pixbuf
-            GdkPixbuf* pixbuf( gdk_pixbuf_new( GDK_COLORSPACE_RGB, true, 8, w, h ) );
-            gdk_pixbuf_fill( pixbuf, ColorUtils::Rgba::transparent( color ).toInt() );
-            {
-                Cairo::Context context( pixbuf );
-                helper().holeFlat( color, 0 ).render( context, 0, 0, w, h, TileSet::Full  );
-                context.updateGdkPixbuf();
-            }
-
             Cairo::Context context( window, clipRect );
             cairo_translate( context, x, y );
-            gdk_cairo_set_source_pixbuf( context, pixbuf, 0, 0 );
+
+            // draw item rect in a group
+            cairo_push_group( context );
+            helper().holeFlat( color, 0 ).render( context, 0, 0, w, h, TileSet::Full );
+            cairo_pop_group_to_source( context );
 
             // generate linear gradient for masking
-            Cairo::Pattern mask( cairo_pattern_create_linear( w-40, 0, w-4, 0 ) );
-            cairo_pattern_add_color_stop( mask, 0,  ColorUtils::Rgba::black() );
-            cairo_pattern_add_color_stop( mask, 1,  ColorUtils::Rgba::transparent() );
-            cairo_mask( context, mask );
+            if( Gtk::gtk_widget_layout_is_reversed( widget ) )
+            {
 
-            g_object_unref( pixbuf );
+                Cairo::Pattern mask( cairo_pattern_create_linear( 4, 0, 40, 0 ) );
+                cairo_pattern_add_color_stop( mask, 0,  ColorUtils::Rgba::transparent() );
+                cairo_pattern_add_color_stop( mask, 1,  ColorUtils::Rgba::black() );
+                cairo_mask( context, mask );
+
+            } else {
+
+                Cairo::Pattern mask( cairo_pattern_create_linear( w-40, 0, w-4, 0 ) );
+                cairo_pattern_add_color_stop( mask, 0,  ColorUtils::Rgba::black() );
+                cairo_pattern_add_color_stop( mask, 1,  ColorUtils::Rgba::transparent() );
+                cairo_mask( context, mask );
+
+            }
 
         } else {
 
             Cairo::Context context( window, clipRect );
             helper().holeFlat( color, 0 ).render( context, x, y, w, h, TileSet::Full  );
+
         }
     }
 
@@ -1747,7 +1746,7 @@ namespace Oxygen
         GdkRectangle* clipRect,
         gint x, gint y, gint w, gint h,
         TileSet::Tiles tiles,
-        StyleOptions options
+        const StyleOptions& options
         )
     {
 
@@ -1776,7 +1775,9 @@ namespace Oxygen
         GdkRectangle* clipRect,
         GtkArrowType orientation,
         gint x, gint y, gint w, gint h,
-        QtSettings::ArrowSize arrowSize, StyleOptions options ) const
+        QtSettings::ArrowSize arrowSize,
+        const StyleOptions& options,
+        Palette::Role role ) const
     {
 
         // get polygon
@@ -1784,9 +1785,9 @@ namespace Oxygen
 
         // retrieve colors
         ColorUtils::Rgba base;
-        if( options&Disabled ) base = settings().palette().color( Palette::Disabled, Palette::ButtonText );
+        if( options&Disabled ) base = settings().palette().color( Palette::Disabled, role );
         else if( options&Hover ) base = settings().palette().color( Palette::Hover );
-        else base = settings().palette().color( Palette::Active, Palette::ButtonText );
+        else base = settings().palette().color( Palette::Active, role );
 
         // need odd width and height
         if( !(w%2) ) w--;
@@ -1801,7 +1802,6 @@ namespace Oxygen
         switch( orientation )
         {
             case GTK_ARROW_UP:
-            //cairo_translate( context, 0., -0.5 );
             break;
 
             case GTK_ARROW_DOWN:
@@ -1862,7 +1862,7 @@ namespace Oxygen
     void Style::renderSliderGroove(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, StyleOptions options )
+        gint x, gint y, gint w, gint h, const StyleOptions& options )
     {
 
         const ColorUtils::Rgba base( settings().palette().color( Palette::Window ) );
@@ -1882,7 +1882,7 @@ namespace Oxygen
     void Style::renderSliderHandle(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, StyleOptions options )
+        gint x, gint y, gint w, gint h, const StyleOptions& options )
     {
 
         // define colors
@@ -1902,7 +1902,6 @@ namespace Oxygen
         }
 
         // render slab
-        options &= ~Sunken;
         Cairo::Context context( window, clipRect );
         renderSlab( context, x, y, w, h, base, options );
 
@@ -1990,7 +1989,7 @@ namespace Oxygen
         GdkRectangle* clipRect,
         gint x, gint y, gint w, gint h,
         GtkPositionType side,
-        StyleOptions options,
+        const StyleOptions& options,
         TabOptions tabOptions
         )
     {
@@ -2020,7 +2019,7 @@ namespace Oxygen
         gint x, gint y, gint w, gint h,
         GtkPositionType side,
         Gtk::Gap gap,
-        StyleOptions options,
+        const StyleOptions& options,
         TabOptions tabOptions
         )
     {
@@ -2074,7 +2073,7 @@ namespace Oxygen
     void Style::renderTabBarFrame(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, const Gtk::Gap& gap, StyleOptions options )
+        gint x, gint y, gint w, gint h, const Gtk::Gap& gap, const StyleOptions& options )
     {
 
         // define colors
@@ -2093,15 +2092,16 @@ namespace Oxygen
         GdkRectangle* clipRect,
         gint x, gint y, gint w, gint h,
         GtkExpanderStyle style,
-        StyleOptions options
+        const StyleOptions& options,
+        Palette::Role role
         ) const
     {
 
         // retrieve colors
         ColorUtils::Rgba base;
-        if( options&Disabled ) base = settings().palette().color( Palette::Disabled, Palette::ButtonText );
+        if( options&Disabled ) base = settings().palette().color( Palette::Disabled, role );
         else if( options&Hover ) base = settings().palette().color( Palette::Hover );
-        else base = settings().palette().color( Palette::Active, Palette::ButtonText );
+        else base = settings().palette().color( Palette::Active, role );
 
         const int xcenter( x + w/2 );
         const int ycenter( y + h/2 );
@@ -2111,20 +2111,20 @@ namespace Oxygen
 
         // create context and translate to center
         Cairo::Context context( window, clipRect );
-        cairo_translate( context, xcenter, ycenter );
-
         cairo_set_line_width( context, 1.0 );
         cairo_set_source( context, base );
 
+        cairo_translate( context, -0.5+xcenter, -0.5+ycenter );
+
         // horizontal line
-        cairo_move_to( context, 0.5-radius, 0.5 );
-        cairo_line_to( context, 0.5+radius, 0.5 );
+        cairo_move_to( context, -radius, 0 );
+        cairo_line_to( context, radius, 0 );
 
         // vertical line
         if( style == GTK_EXPANDER_COLLAPSED || style == GTK_EXPANDER_SEMI_COLLAPSED )
         {
-            cairo_move_to( context, 0.5, 0.5-radius );
-            cairo_line_to( context, 0.5, 0.5+radius );
+            cairo_move_to( context, 0, -radius );
+            cairo_line_to( context, 0, radius );
         }
 
         cairo_stroke( context );
@@ -2138,33 +2138,46 @@ namespace Oxygen
         bool drawResizeHandle( !(wopt & WinDeco::Shaded) && (wopt & WinDeco::Resizable) );
         bool isMaximized( wopt & WinDeco::Maximized );
 
+        // first draw to an offscreen surface, then render it on the target, having clipped the corners if hasAlpha==TRUE
+        Cairo::Surface surface( cairo_surface_create_similar( cairo_get_target(context), CAIRO_CONTENT_COLOR_ALPHA, w, h ) );
+        {
+
+            // create context to paint on surface
+            Cairo::Context context( surface );
+            renderWindowBackground( context, 0L, 0L, 0L, x, y, w, h );
+
+            StyleOptions options( hasAlpha ? Alpha : Blend );
+
+            // focus
+            if(wopt & WinDeco::Active) options|=Focus;
+
+            if( !isMaximized )
+            { drawFloatFrame( context, 0L, 0L, x, y, w, h, options, Palette::InactiveWindowBackground ); }
+
+            if( drawResizeHandle )
+            {
+                ColorUtils::Rgba base( settings().palette().color( Palette::Window ) );
+                renderWindowDots( context, x, y, w, h, base, wopt);
+            }
+
+        }
+
+        // now that everything is rendered, prepare transparent background, clip the rounded rect, then blit the windeco to context
         cairo_save( context );
         cairo_set_source_rgba( context, 0, 0, 0, 0 );
         cairo_set_operator( context, CAIRO_OPERATOR_SOURCE );
         cairo_paint( context );
         cairo_set_operator( context, CAIRO_OPERATOR_OVER );
-
         if( hasAlpha )
         {
             // cut round corners using alpha
             cairo_rounded_rectangle(context,x,y,w,h,3.5);
             cairo_clip(context);
         }
-        renderWindowBackground( context, 0L, 0L, 0L, x, y, w, h );
+        cairo_set_source_surface( context, surface, 0, 0 );
+        cairo_paint( context );
+        cairo_restore( context );
 
-        StyleOptions options( hasAlpha ? Alpha : Blend );
-
-        // focus
-        if(wopt & WinDeco::Active) options|=Focus;
-
-        if( !isMaximized )
-        { drawFloatFrame( context, 0L, 0L, x, y, w, h, options); }
-
-        if( drawResizeHandle )
-        {
-            ColorUtils::Rgba base( settings().palette().color( Palette::Window ) );
-            renderWindowDots( context, x, y, w, h, base, wopt);
-        }
     }
 
     //__________________________________________________________________
@@ -2214,10 +2227,10 @@ namespace Oxygen
     }
 
     //__________________________________________________________________
-    void Style::adjustScrollBarHole( int& x, int& y, int& w, int& h, StyleOptions options ) const
+    void Style::adjustScrollBarHole( int& x, int& y, int& w, int& h, const StyleOptions& options ) const
     {
 
-        const int buttonSize( 14 );
+        const int buttonSize( 12 );
         const int subLineOffset( buttonSize*settings().scrollBarSubLineButtons() );
         const int addLineOffset( buttonSize*settings().scrollBarAddLineButtons() );
         if( options&Vertical )
@@ -2243,7 +2256,7 @@ namespace Oxygen
         GdkRectangle* clipRect,
         gint x, gint y, gint w, gint h,
         GtkPositionType side,
-        StyleOptions options,
+        const StyleOptions& options,
         TabOptions tabOptions
         )
     {
@@ -2420,7 +2433,7 @@ namespace Oxygen
         GdkRectangle* clipRect,
         gint x, gint y, gint w, gint h,
         GtkPositionType side,
-        StyleOptions options,
+        const StyleOptions& options,
         TabOptions tabOptions
         )
     {
@@ -2599,7 +2612,7 @@ namespace Oxygen
         GdkRectangle* clipRect,
         gint x, gint y, gint w, gint h,
         GtkPositionType side,
-        StyleOptions options,
+        const StyleOptions& options,
         TabOptions tabOptions
         )
     {
@@ -2965,21 +2978,27 @@ namespace Oxygen
     }
 
     //____________________________________________________________________________________
-    ColorUtils::Rgba Style::slabShadowColor( StyleOptions options ) const
+    ColorUtils::Rgba Style::slabShadowColor( const StyleOptions& options ) const
     {
 
-        ColorUtils::Rgba glow;
-        const Palette::Group group( options&Disabled ? Palette::Disabled : Palette::Active );
+        // no glow when widget is disabled
+        if( options&Disabled ) return ColorUtils::Rgba();
 
-        const bool enabled( !(options&Disabled ) );
-        if( enabled && (options & Hover) ) glow = settings().palette().color( group, Palette::Hover );
-        else if( enabled && (options & Focus) ) glow =  settings().palette().color( group, Palette::Focus );
-        return glow;
+        /*
+        for flat, un-sunken, hovered buttons, return Focus color, consistently with oxygen-qt
+        though this is not quite correct
+        */
+        else if( (options&Flat) && !(options&Sunken) && (options&(Hover|Focus)) ) return  settings().palette().color( Palette::Focus );
+
+        // normal behavior in all other cases
+        else if( options & Hover ) return settings().palette().color( Palette::Hover );
+        else if( options & Focus ) return  settings().palette().color( Palette::Focus );
+        else return ColorUtils::Rgba();
 
     }
 
     //__________________________________________________________________
-    void Style::renderSlab( Cairo::Context& context, gint x, gint y, gint w, gint h, const ColorUtils::Rgba& base, StyleOptions options, TileSet::Tiles tiles )
+    void Style::renderSlab( Cairo::Context& context, gint x, gint y, gint w, gint h, const ColorUtils::Rgba& base, const StyleOptions& options, TileSet::Tiles tiles )
     {
 
         // do nothing if not enough room
@@ -3101,33 +3120,7 @@ namespace Oxygen
     }
 
     //__________________________________________________________________
-    cairo_pattern_t* Style::verticalGradient( const ColorUtils::Rgba& base, int y1, int y2 ) const
-    {
-
-        ColorUtils::Rgba top( ColorUtils::backgroundTopColor( base ) );
-        ColorUtils::Rgba bottom( ColorUtils::backgroundBottomColor( base ) );
-        cairo_pattern_t* pattern = cairo_pattern_create_linear( 0, y1, 0, y2 );
-        cairo_pattern_add_color_stop( pattern, 0, top );
-        cairo_pattern_add_color_stop( pattern, 0.5, base );
-        cairo_pattern_add_color_stop( pattern, 1, bottom );
-        return pattern;
-    }
-
-    //__________________________________________________________________
-    cairo_pattern_t* Style::radialGradient( const ColorUtils::Rgba& base, int x, int y, int r ) const
-    {
-        // create radial pattern
-        ColorUtils::Rgba radial( ColorUtils::backgroundRadialColor( base ) );
-        cairo_pattern_t* pattern( cairo_pattern_create_radial( x, y, r ) );
-        cairo_pattern_add_color_stop( pattern, 0, radial );
-        cairo_pattern_add_color_stop( pattern, 0.5, ColorUtils::alphaColor( radial, 101.0/255 ) );
-        cairo_pattern_add_color_stop( pattern, 0.75, ColorUtils::alphaColor( radial, 37.0/255 ) );
-        cairo_pattern_add_color_stop( pattern, 1.0, ColorUtils::alphaColor( radial, 0 ) );
-        return pattern;
-    }
-
-    //__________________________________________________________________
-    void Style::renderWindowDots(cairo_t* context, gint x, gint y, gint w, gint h, const ColorUtils::Rgba& color, WinDeco::Options wopt)
+    void Style::renderWindowDots(Cairo::Context& context, gint x, gint y, gint w, gint h, const ColorUtils::Rgba& color, WinDeco::Options wopt)
     {
         bool isMaximized( wopt & WinDeco::Maximized );
         bool hasAlpha( wopt & WinDeco::Alpha );

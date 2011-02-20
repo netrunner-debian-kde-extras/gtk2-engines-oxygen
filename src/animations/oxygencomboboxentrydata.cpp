@@ -47,6 +47,7 @@ namespace Oxygen
         _button._styleChangeId.connect( G_OBJECT(widget), "style-set", G_CALLBACK( childStyleChangeNotifyEvent ), this );
         _button._enterId.connect( G_OBJECT(widget), "enter-notify-event", (GCallback)enterNotifyEvent, this );
         _button._leaveId.connect( G_OBJECT(widget), "leave-notify-event", (GCallback)leaveNotifyEvent, this );
+        _button._toggledId.connect( G_OBJECT(widget), "toggled", G_CALLBACK( childToggledEvent ), this );
         _button._widget = widget;
     }
 
@@ -57,7 +58,7 @@ namespace Oxygen
         assert( !_entry._widget );
 
         #if OXYGEN_DEBUG
-        std::cout << "Oxygen::ComboBoxEntryData::setEntry - " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")" << std::endl;
+        std::cerr << "Oxygen::ComboBoxEntryData::setEntry - " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")" << std::endl;
         #endif
 
         _entry._destroyId.connect( G_OBJECT(widget), "destroy", G_CALLBACK( childDestroyNotifyEvent ), this );
@@ -65,6 +66,13 @@ namespace Oxygen
         _entry._enterId.connect( G_OBJECT(widget), "enter-notify-event", (GCallback)enterNotifyEvent, this );
         _entry._leaveId.connect( G_OBJECT(widget), "leave-notify-event", (GCallback)leaveNotifyEvent, this );
         _entry._widget = widget;
+    }
+
+    //________________________________________________________________________________
+    void ComboBoxEntryData::setPressed( GtkWidget* widget, bool value )
+    {
+        if( widget == _button._widget ) _button._pressed = value;
+        return;
     }
 
     //________________________________________________________________________________
@@ -92,7 +100,7 @@ namespace Oxygen
     {
 
         #if OXYGEN_DEBUG
-        std::cout << "Oxygen::ComboBoxEntryData::unregisterChild - " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")" << std::endl;
+        std::cerr << "Oxygen::ComboBoxEntryData::unregisterChild - " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")" << std::endl;
         #endif
 
         if( widget == _button._widget ) _button.disconnect();
@@ -106,7 +114,7 @@ namespace Oxygen
     {
 
         #if OXYGEN_DEBUG
-        std::cout << "Oxygen::ComboBoxEntryData::Data::disconnect - " << _widget << " (" << G_OBJECT_TYPE_NAME( _widget ) << ")" << std::endl;
+        std::cerr << "Oxygen::ComboBoxEntryData::Data::disconnect - " << _widget << " (" << G_OBJECT_TYPE_NAME( _widget ) << ")" << std::endl;
         #endif
 
         if( !_widget ) return;
@@ -114,8 +122,10 @@ namespace Oxygen
         _styleChangeId.disconnect();
         _enterId.disconnect();
         _leaveId.disconnect();
+        _toggledId.disconnect();
         _hovered = false;
         _focus = false;
+        _pressed = false;
         _widget = 0L;
     }
 
@@ -130,4 +140,12 @@ namespace Oxygen
     void ComboBoxEntryData::childStyleChangeNotifyEvent( GtkWidget* widget, GtkStyle*, gpointer data )
     { static_cast<ComboBoxEntryData*>(data)->unregisterChild( widget ); }
 
+
+    //____________________________________________________________________________________________
+    void ComboBoxEntryData::childToggledEvent( GtkWidget* widget, gpointer data)
+    {
+        if( GTK_IS_TOGGLE_BUTTON( widget ) )
+        { static_cast<ComboBoxEntryData*>(data)->setPressed( widget, gtk_toggle_button_get_active( GTK_TOGGLE_BUTTON( widget ) ) ); }
+        return;
+    }
 }

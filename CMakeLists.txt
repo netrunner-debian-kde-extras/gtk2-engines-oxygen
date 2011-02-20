@@ -1,5 +1,4 @@
 project( oxygen-gtk )
-include( UsePkgConfig )
 
 cmake_minimum_required(VERSION 2.4)
 
@@ -14,35 +13,33 @@ set( CPACK_PACKAGE_DESCRIPTION_SUMMARY "Oxygen Gtk theme" )
 set( CPACK_PACKAGE_VENDOR "hugo@oxygen-icons.org" )
 set( CPACK_PACKAGE_VERSION_MAJOR "1" )
 set( CPACK_PACKAGE_VERSION_MINOR "0" )
-set( CPACK_PACKAGE_VERSION_PATCH "0" )
-set( CPACK_SOURCE_PACKAGE_FILE_NAME "oxygen-gtk-1.0.0" )
+set( CPACK_PACKAGE_VERSION_PATCH "2" )
+set( CPACK_SOURCE_IGNORE_FILES "build" "^${PROJECT_SOURCE_DIR}.*/.git/" )
+
+set( CPACK_SOURCE_PACKAGE_FILE_NAME "oxygen-gtk-${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}" )
 include( CPack )
 
 ########################
 # Package specific flags
 ########################
 
-# Debugging information
+# Set to 1 to enable debugging information
 set( OXYGEN_DEBUG 0 )
 
-# Replace gtk stock icons with oxygen-icons
-# if set to 1
+# Set to 1 to replace gtk stock icons
+# with oxygen-icons
 set( OXYGEN_ICON_HACK 1 )
 
-# Force KDE icons and fonts when running in non-KDE
-set( OXYGEN_FORCE_KDE_ICONS_AND_FONTS 1 )
-
-# Resize combobox list to compensate for combobox button glow width (may result in flicker on combo popup)
+# Set to 1 to resize combobox list to compensate for combobox button glow width
+# (may result in flicker on combo popup)
 set( ENABLE_COMBOBOX_LIST_RESIZE 1 )
 
 ##############
 # Requirements
 ##############
 
-# X11
-find_package( X11 REQUIRED )
-
 # install prefix
+include( UsePkgConfig )
 if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 
     exec_program(
@@ -56,24 +53,17 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 
 endif(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 
+# X11
+find_package( X11 REQUIRED )
+
+# PKG_CONFIG
+find_package(PkgConfig REQUIRED )
+
 # GTK
-pkgconfig( gtk+-2.0 GTK_INCLUDE_DIR GTK_LIB_DIR GTK_LINK_FLAGS GTK_CFLAGS )
-
-if( NOT GTK_INCLUDE_DIR )
-	message( FATAL_ERROR "GTK was not found.  Ensure you have the GTK development libraries installed, and GTK's pkgconfig files are in your pkgconfig search path." )
-endif( NOT GTK_INCLUDE_DIR )
-
-message( STATUS "Found gtk include dir: ${GTK_INCLUDE_DIR}" )
-message( STATUS "Found gtk library dir: ${GTK_LIB_DIR}" )
+pkg_check_modules( GTK REQUIRED gtk+-2.0 )
 
 # Cairo
-pkgconfig( cairo CAIRO_INCLUDE_DIR CAIRO_LIB_DIR CAIRO_LINK_FLAGS CAIRO_CFLAGS )
-if( NOT CAIRO_INCLUDE_DIR )
-	message( FATAL_ERROR "Cairo was not found.  Ensure you have the Cairo development libraries installed, and Cairo's pkgconfig files are in your pkgconfig search path." )
-endif( NOT CAIRO_INCLUDE_DIR )
-
-message( STATUS "Found cairo include dir: ${CAIRO_INCLUDE_DIR}" )
-message( STATUS "Found cairo library dir: ${CAIRO_LIB_DIR}" )
+pkg_check_modules( CAIRO REQUIRED cairo )
 
 ##########################
 # installation directories
@@ -84,17 +74,28 @@ exec_program(
 	OUTPUT_VARIABLE GTK_VERSION )
 
 set( INSTALL_PATH_GTK_ENGINES "${CMAKE_INSTALL_PREFIX}/lib${LIB_SUFFIX}/gtk-2.0/${GTK_VERSION}/engines" CACHE PATH "The directory in which to install the theme engine library( eg. /usr/lib/gtk-2.0/2.4.0/engines )" )
-message( STATUS "Installing the GTK theme engine library to: ${INSTALL_PATH_GTK_ENGINES}" )
-
 set( INSTALL_PATH_GTK_THEMES "${CMAKE_INSTALL_PREFIX}/share/themes" CACHE PATH "The directory in which to install the theme data( eg. /usr/share/themes )" )
 set( GTK_THEME_DIR ${INSTALL_PATH_GTK_THEMES}/oxygen-gtk )
-message( STATUS "Installing the GTK theme engine data to: ${GTK_THEME_DIR}" )
+
+#########
+# summary
+#########
+message( "" )
+message( "Flags: " )
+message( "  OXYGEN_DEBUG ${OXYGEN_DEBUG}" )
+message( "  OXYGEN_ICON_HACK ${OXYGEN_ICON_HACK}" )
+message( "  ENABLE_COMBOBOX_LIST_RESIZE ${ENABLE_COMBOBOX_LIST_RESIZE}" )
+message( "" )
+message( "Path: " )
+message( "  Installing the GTK theme engine library to: ${INSTALL_PATH_GTK_ENGINES}" )
+message( "  Installing the GTK theme engine data to: ${GTK_THEME_DIR}" )
+message( "" )
 
 ######################################################################
 # Setup definitions and directories to be used for linking and include
 ######################################################################
-link_directories( ${GTK_LIB_DIR} ${CAIRO_LIB_DIR} ${QT_LIBRARY_DIR} )
-include_directories( ${GTK_INCLUDE_DIR} ${CAIRO_INCLUDE_DIR} ${X11_X11_INCLUDE_PATH} )
+link_directories( ${GTK_LIBRARY_DIRS} ${CAIRO_LIBRARY_DIRS} )
+include_directories( ${GTK_INCLUDE_DIRS} ${CAIRO_INCLUDE_DIRD} ${X11_X11_INCLUDE_PATH} )
 
 #############################
 # generate configuration file

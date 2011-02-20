@@ -113,6 +113,9 @@ namespace Oxygen
                 return out.str();
             }
 
+            //! commit to gtk and clear
+            void commit( void );
+
             protected:
 
             //! initialize default sections

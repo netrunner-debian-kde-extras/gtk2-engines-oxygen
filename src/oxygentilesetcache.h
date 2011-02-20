@@ -30,28 +30,18 @@ namespace Oxygen
     class TileSet;
 
     template< typename T>
-    class TileSetCache: public Cache<T, TileSet*>
+    class TileSetCache: public Cache<T, TileSet>
     {
 
         public:
 
         //! constructor
-        TileSetCache( void )
+        TileSetCache( size_t size = 100 )
         {}
 
         //! destructor
         virtual ~TileSetCache( void )
         {}
-
-        protected:
-
-        //! erase value from map
-        virtual void erase( TileSet*& tileset )
-        { delete tileset; }
-
-        //! default value
-        virtual TileSet* defaultValue( void ) const
-        { return 0L; }
 
     };
 
