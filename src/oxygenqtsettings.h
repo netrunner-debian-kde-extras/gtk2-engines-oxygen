@@ -4,11 +4,6 @@
 * this file is part of the oxygen gtk engine
 * Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
 *
-* inspired notably from kdelibs/kdeui/color/kcolorutils.h
-* Copyright (C) 2007 Matthew Woehlke <mw_triad@users.sourceforge.net>
-* Copyright (C) 2007 Thomas Zander <zander@kde.org>
-* Copyright (C) 2007 Zack Rusin <zack@kde.org>
-*
 * This  library is free  software; you can  redistribute it and/or
 * modify it  under  the terms  of the  GNU Lesser  General  Public
 * License  as published  by the Free  Software  Foundation; either
@@ -26,10 +21,12 @@
 */
 
 #include "oxygenapplicationname.h"
+#include "oxygengtkicons.h"
 #include "oxygengtkrc.h"
 #include "oxygenoption.h"
 #include "oxygenoptionmap.h"
 #include "oxygenpalette.h"
+#include "oxygenpathlist.h"
 
 #include <iostream>
 #include <sstream>
@@ -53,11 +50,12 @@ namespace Oxygen
         virtual ~QtSettings( void )
         {}
 
-        //! initialize
-        bool initialize( void );
+        //! returns user config dir
+        std::string userConfigDir( void ) const
+        { return _userConfigDir; }
 
-        //! initialize colors
-        bool initializeColors( void );
+        //! initialize
+        void initialize( void );
 
         //! palette
         const Palette& palette( void ) const
@@ -217,32 +215,14 @@ namespace Oxygen
 
         //@}
 
+        //! true if argb is enabled
+        bool argbEnabled( void ) const
+        { return _argbEnabled; }
+
         protected:
 
         // get home directory
         std::string home( void ) const;
-
-        //! path list
-        class PathList: public std::vector<std::string>
-        {
-
-            public:
-
-            //! empty constructor
-            PathList( void )
-            {}
-
-            //! splitting constructor
-            PathList( const std::string& path, const std::string& separator = ":" )
-            { split( path, separator ); }
-
-            //! split string using provided separator and store
-            void split( const std::string&, const std::string& = ":" );
-
-            //! concatenate using provided separator
-            std::string join( const std::string& = ":" ) const;
-
-        };
 
         //! icon path
         PathList kdeConfigPathList( void ) const;
@@ -253,8 +233,14 @@ namespace Oxygen
         //! add icon theme to path list, accounting for theme inheritance (recursively)
         void addIconTheme( PathList&, const std::string& );
 
+        //! init user config dir
+        void initUserConfigDir( void );
+
         //! init application name
         void initApplicationName( void );
+
+        //! init argb support
+        void initArgb( void );
 
         //! load kde icons
         void loadKdeIcons( void );
@@ -292,6 +278,9 @@ namespace Oxygen
 
         //! kde oxygen options
         OptionMap _oxygen;
+
+        //! user config directory
+        std::string _userConfigDir;
 
         //!@name icons
         //@{
@@ -396,13 +385,17 @@ namespace Oxygen
 
         //@}
 
+        //! true if argb is enabled
+        bool _argbEnabled;
+
         //! initialization flags
         bool _initialized;
-        bool _colorsInitialized;
+        bool _kdeColorsInitialized;
+        bool _gtkColorsInitialized;
 
-        //! KDE running flags
-        bool _KDESession;
-        
+        //! gtk icons generator
+        GtkIcons _icons;
+
         //! rc options (passed to gtk at the end of init
         Gtk::RC _rc;
 

@@ -3,11 +3,6 @@
 * Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
 * Copyright (c) 2010 Ruslan Kabatsayev <b7.10110111@gmail.com>
 *
-* inspired notably from kdelibs/kdeui/color/kcolorutils.h
-* Copyright (C) 2007 Matthew Woehlke <mw_triad@users.sourceforge.net>
-* Copyright (C) 2007 Thomas Zander <zander@kde.org>
-* Copyright (C) 2007 Zack Rusin <zack@kde.org>
-*
 * This  library is free  software; you can  redistribute it and/or
 * modify it  under  the terms  of the  GNU Lesser  General  Public
 * License  as published  by the Free  Software  Foundation; either
@@ -28,7 +23,6 @@
 #include "oxygencoloreffect.h"
 #include "oxygencolorutils.h"
 #include "oxygenfontinfo.h"
-#include "oxygengtkicons.h"
 #include "config.h"
 
 #include <gtk/gtk.h>
@@ -73,26 +67,28 @@ namespace Oxygen
         _startDragTime( 500 ),
         _buttonSize( ButtonDefault ),
         _frameBorder( BorderDefault ),
+        _argbEnabled( true ),
         _initialized( false ),
-        _colorsInitialized( false ),
-        _KDESession( false )
+        _kdeColorsInitialized( false ),
+        _gtkColorsInitialized( false )
     {}
 
     //_________________________________________________________
-    bool QtSettings::initialize( void )
+    void QtSettings::initialize( void )
     {
 
-        if( _initialized ) return false;
+        if( _initialized ) return;
         _initialized = true;
 
-        if( g_getenv( "KDE_FULL_SESSION" ) )
-            _KDESession = true;
+        // initialize user config dir
+        initUserConfigDir();
 
         // clear RC
         _rc.clear();
 
         // init application name
         initApplicationName();
+        initArgb();
 
         _kdeConfigPathList = kdeConfigPathList();
 
@@ -118,102 +114,63 @@ namespace Oxygen
         std::cerr << _oxygen << std::endl;
         #endif
 
-#if !OXYGEN_FORCE_KDE_ICONS_AND_FONTS
-        // TODO: Add support for gtk schemes when not _KDESession
-        if( _KDESession )
-#endif
-        {
-            // reload icons
-            #if OXYGEN_ICON_HACK
-            _kdeIconPathList = kdeIconPathList();
-            loadKdeIcons();
-            #endif
-
-            // reload fonts
-            loadKdeFonts();
-        }
-
         // kde globals options
         loadKdeGlobalsOptions();
 
         // oxygen options
         loadOxygenOptions();
 
-        #if OXYGEN_DEBUG
-        std::cerr << "Oxygen::QtSettings::initialize - Gtkrc: " << std::endl;
-        std::cerr << _rc << std::endl;
-        #endif
+        // reload fonts
+        loadKdeFonts();
 
-        // pass all resources to gtk
-        gtk_rc_parse_string( _rc.toString().c_str() );
-
-        #if OXYGEN_DEBUG
-        std::cerr << "Oxygen::QtSettings::initialize - done. " << std::endl;
-        #endif
-
-        return true;
-
-    }
-
-    //_________________________________________________________
-    bool QtSettings::initializeColors( void )
-    {
-
-        if( _colorsInitialized ) return false;
-        _colorsInitialized = true;
-
-        // clear RC
-        _rc.clear();
-
-        // reload palette
+        // color palette
         loadKdePalette();
 
         // gtk colors
         generateGtkColors();
 
-        // pass all resources to gtk
-        gtk_rc_parse_string( _rc.toString().c_str() );
+        // reload icons
+        #if OXYGEN_ICON_HACK
+        _kdeIconPathList = kdeIconPathList();
+        loadKdeIcons();
+        #endif
 
-        return true;
+        // deal with pathbar button margins
+        // this needs to be done programatically in order to properly account for RTL locales
+        _rc.addSection( "oxygen-pathbutton", Gtk::RC::defaultSection() );
+        _rc.addToCurrentSection( "  GtkButton::inner-border = { 2, 2, 1, 0 }" );
 
-    }
-
-    //_________________________________________________________
-    void QtSettings::PathList::split( const std::string& path, const std::string& separator )
-    {
-
-        clear();
-        std::string local( path );
-        if( local.empty() ) return;
-        if( local[local.size()-1] == '\n' ) local = local.substr( 0, local.size()-1 );
-
-        size_t position( std::string::npos );
-        while( ( position = local.find( separator ) ) != std::string::npos )
+        if( gtk_widget_get_default_direction() == GTK_TEXT_DIR_RTL )
         {
-            push_back( local.substr(0, position ) );
-            local = local.substr( position + separator.length() );
+
+            _rc.addToCurrentSection( "  GtkToggleButton::inner-border={ 10, 0, 1, 0 }" );
+
+        } else {
+
+            _rc.addToCurrentSection( "  GtkToggleButton::inner-border={ 0, 10, 1, 0 }" );
+
         }
 
-        if( !local.empty() ) push_back( local );
+        _rc.addToRootSection( "widget_class \"*PathBar.GtkToggleButton\" style \"oxygen-pathbutton\"" );
+
+        #if OXYGEN_DEBUG
+        std::cerr << "Oxygen::QtSettings::initialize - Gtkrc: " << std::endl;
+        std::cerr << _rc << std::endl;
+        #endif
+
+        // pass all resources to gtk and clear
+        _rc.commit();
+
+        #if OXYGEN_DEBUG
+        std::cerr << "Oxygen::QtSettings::initialize - done. " << std::endl;
+        #endif
+
         return;
 
     }
 
     //_________________________________________________________
-    std::string QtSettings::PathList::join( const std::string& separator ) const
-    {
-        std::ostringstream out;
-        for( const_iterator iter = begin(); iter != end(); ++iter )
-        {
-            if( iter != begin() ) out << separator;
-            out << *iter;
-        }
-
-        return out.str();
-    }
-
-    //_________________________________________________________
-    QtSettings::PathList QtSettings::kdeConfigPathList( void ) const
+    PathList QtSettings::kdeConfigPathList( void ) const
     {
 
         PathList out;
@@ -221,7 +178,15 @@ namespace Oxygen
         // load icon install prefix
         char* path = 0L;
         if( g_spawn_command_line_sync( "kde4-config --path config", &path, 0L, 0L, 0L ) && path )
-        { out.split( path ); };
+        {
+
+            out.split( path );
+
+        } else {
+
+            out.push_back( userConfigDir() );
+
+        }
 
         out.push_back( GTK_THEME_DIR );
         return out;
@@ -229,7 +194,7 @@ namespace Oxygen
     }
 
     //_________________________________________________________
-    QtSettings::PathList QtSettings::kdeIconPathList( void ) const
+    PathList QtSettings::kdeIconPathList( void ) const
     {
 
         // load icon install prefix
@@ -247,10 +212,140 @@ namespace Oxygen
     }
 
     //_________________________________________________________
+    void QtSettings::initUserConfigDir( void )
+    {
+
+        // create directory name
+        _userConfigDir = std::string( g_get_user_config_dir() ) + "/oxygen-gtk";
+
+        // make sure that corresponding directory does exist
+        struct stat st;
+        if( stat( _userConfigDir.c_str(), &st ) != 0 )
+        { mkdir( _userConfigDir.c_str(), S_IRWXU|S_IRWXG|S_IRWXO ); }
+
+        // note: in some cases, the target might exist and not be a directory
+        // nothing we can do about it. We won't overwrite the file to prevent dataloss
+
+    }
+
+    //_________________________________________________________
     void QtSettings::initApplicationName( void )
     {
         const char* applicationName = g_get_prgname();
         if( applicationName ) { _applicationName.parse( applicationName ); }
+
+    }
+
+    //_________________________________________________________
+    void QtSettings::initArgb( void )
+    {
+        // get program name
+        const char* appName = g_get_prgname();
+        if( !appName ) return;
+
+        // user-defined configuration file
+        const std::string userConfig( userConfigDir() + "/argb-apps.conf");
+
+        // make sure user configuration file exists
+        std::ofstream newConfig( userConfig.c_str(), std::ios::app );
+        if( newConfig )
+        {
+            // if the file is empty (newly created), put a hint there
+            if( !newConfig.tellp() )
+            { newConfig << "# argb-apps.conf\n# Put your user-specific ARGB app settings here\n\n"; }
+            newConfig.close();
+
+        }
+
+        // check for ARGB hack being disabled
+        if(g_getenv("OXYGEN_DISABLE_ARGB_HACK"))
+        {
+            std::cerr << "Oxygen::QtSettings::initArgb - ARGB hack is disabled; program name: " << appName << std::endl;
+            std::cerr << "Oxygen::QtSettings::initArgb - if disabling ARGB hack helps, please add this string:\n\ndisable:" << appName << "\n\nto ~/.config/oxygen-gtk/argb-apps.conf\nand report it here: https://bugs.kde.org/show_bug.cgi?id=260640" << std::endl;
+            _argbEnabled = false;
+            return;
+        }
+
+        // get debug flag from environement
+        const bool OXYGEN_ARGB_DEBUG = g_getenv("OXYGEN_ARGB_DEBUG");
+
+        // read blacklist
+        // system-wide configuration file
+        const std::string configFile( std::string( GTK_THEME_DIR ) + "/argb-apps.conf" );
+        std::ifstream systemIn( configFile.c_str() );
+        if( !systemIn )
+        {
+
+            if( G_UNLIKELY(OXYGEN_DEBUG||OXYGEN_ARGB_DEBUG) )
+            { std::cerr << "Oxygen::QtSettings::initArgb - ARGB config file \"" << configFile << "\" not found" << std::endl; }
+
+        }
+
+        // load options into a string
+        std::string contents;
+        std::vector<std::string> lines;
+        while( std::getline( systemIn, contents, '\n' ) )
+        {
+            if( contents.empty() || contents[0] == '#' ) continue;
+            lines.push_back( contents );
+        }
+
+        // user specific blacklist
+        std::ifstream userIn( userConfig.c_str() );
+        if( !userIn )
+        {
+
+            if( G_UNLIKELY(OXYGEN_DEBUG||OXYGEN_ARGB_DEBUG) )
+            { std::cerr << "Oxygen::QtSettings::initArgb - user-defined ARGB config file \"" << userConfig << "\" not found - only system-wide one will be used" << std::endl; }
+
+        }
+
+        // load options into a string
+        while( std::getline( userIn, contents, '\n' ) )
+        {
+            if( contents.empty() || contents[0] == '#' ) continue;
+            lines.push_back( contents );
+        }
+
+        // true if application was found in one of the lines
+        bool found( false );
+        for( std::vector<std::string>::const_reverse_iterator iter = lines.rbegin(); iter != lines.rend() && !found; ++iter )
+        {
+
+            // store line locally
+            std::string contents( *iter );
+
+            // split string using ":" as a delimiter
+            std::vector<std::string> appNames;
+            size_t position( std::string::npos );
+            while( ( position = contents.find( ':' ) ) != std::string::npos )
+            {
+                std::string appName( contents.substr(0, position ) );
+                if( !appName.empty() ) { appNames.push_back( appName ); }
+                contents = contents.substr( position+1 );
+            }
+
+            if( !contents.empty() ) appNames.push_back( contents );
+            if( appNames.empty() ) continue;
+
+            // check line type
+            bool enabled( true );
+            if( appNames[0] == "enable" ) enabled = true;
+            else if( appNames[0] == "disable" ) enabled = false;
+            else continue;
+
+            // compare application names to this application
+            for( unsigned int i = 1; i < appNames.size(); i++ )
+            {
+                if( appNames[i] == "all" || appNames[i] == appName )
+                {
+                    found = true;
+                    _argbEnabled = enabled;
+                    break;
+                }
+            }
+
+        }
 
     }
 
@@ -318,12 +413,7 @@ namespace Oxygen
 
         // add option
         if( showIconsOnPushButton == "false" )
-        {
-            _rc.addToHeaderSection( "gtk-button-images = 0\n" );
-        }
-
-        // create icon translator, for stock icons
-        GtkIcons icons;
+        { _rc.addToHeaderSection( "gtk-button-images = 0\n" ); }
 
         // load icon sizes from kde
         // const int desktopIconSize( _kdeGlobals.getOption( "[DesktopIcons]", "Size" ).toInt( 48 ) );
@@ -334,31 +424,35 @@ namespace Oxygen
         const int toolbarIconSize( _kdeGlobals.getOption( "[ToolbarIcons]", "Size" ).toInt( 22 ) );
 
         // set gtk icon sizes
-        icons.setIconSize( "panel-menu", smallIconSize );
-        icons.setIconSize( "panel", panelIconSize );
-        icons.setIconSize( "gtk-small-toolbar", toolbarIconSize );
-        icons.setIconSize( "gtk-large-toolbar", mainToolbarIconSize );
-        icons.setIconSize( "gtk-dnd", mainToolbarIconSize );
-        icons.setIconSize( "gtk-button", smallIconSize );
-        icons.setIconSize( "gtk-menu", smallIconSize );
-        icons.setIconSize( "gtk-dialog", dialogIconSize );
-        icons.setIconSize( "", smallIconSize );
+        _icons.setIconSize( "panel-menu", smallIconSize );
+        _icons.setIconSize( "panel", panelIconSize );
+        _icons.setIconSize( "gtk-small-toolbar", toolbarIconSize );
+        _icons.setIconSize( "gtk-large-toolbar", mainToolbarIconSize );
+        _icons.setIconSize( "gtk-dnd", mainToolbarIconSize );
+        _icons.setIconSize( "gtk-button", smallIconSize );
+        _icons.setIconSize( "gtk-menu", smallIconSize );
+        _icons.setIconSize( "gtk-dialog", dialogIconSize );
+        _icons.setIconSize( "", smallIconSize );
 
         // load translation table, generate full translation list, and path to gtk
-        icons.loadTranslations( sanitizePath( std::string( GTK_THEME_DIR ) + "/icons4" ) );
+        _icons.loadTranslations( sanitizePath( std::string( GTK_THEME_DIR ) + "/icons4" ) );
 
         // generate full path list
         PathList iconThemeList;
         addIconTheme( iconThemeList, _kdeIconTheme );
         addIconTheme( iconThemeList, _kdeFallbackIconTheme );
 
-        _rc.merge( icons.generate( iconThemeList ) );
+        _rc.merge( _icons.generate( iconThemeList ) );
 
     }
 
     //_________________________________________________________
     void QtSettings::loadKdePalette( void )
     {
+
+        if( _kdeColorsInitialized ) return;
+        _kdeColorsInitialized = true;
+
         _palette.clear();
         _palette.setColor( Palette::Active, Palette::Window, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:Window]", "BackgroundNormal" ) ) );
         _palette.setColor( Palette::Active, Palette::WindowText, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:Window]", "ForegroundNormal" ) ) );
@@ -366,33 +460,27 @@ namespace Oxygen
         _palette.setColor( Palette::Active, Palette::Button, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:Button]", "BackgroundNormal" ) ) );
         _palette.setColor( Palette::Active, Palette::ButtonText, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:Button]", "ForegroundNormal" ) ) );
 
-        _palette.setColor( Palette::Active, Palette::Focus, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:Button]", "DecorationFocus" ) ) );
-        _palette.setColor( Palette::Active, Palette::Hover, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:Button]", "DecorationHover" ) ) );
-
         _palette.setColor( Palette::Active, Palette::Selected, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:Selection]", "BackgroundNormal" ) ) );
         _palette.setColor( Palette::Active, Palette::SelectedText, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:Selection]", "ForegroundNormal" ) ) );
 
         _palette.setColor( Palette::Active, Palette::Tooltip, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:Tooltip]", "BackgroundNormal" ) ) );
         _palette.setColor( Palette::Active, Palette::TooltipText, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:Tooltip]", "ForegroundNormal" ) ) );
 
+        _palette.setColor( Palette::Active, Palette::Focus, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:View]", "DecorationFocus" ) ) );
+        _palette.setColor( Palette::Active, Palette::Hover, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:View]", "DecorationHover" ) ) );
+
         _palette.setColor( Palette::Active, Palette::Base, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:View]", "BackgroundNormal" ) ) );
         _palette.setColor( Palette::Active, Palette::BaseAlternate, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:View]", "BackgroundAlternate" ) ) );
         _palette.setColor( Palette::Active, Palette::Text, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:View]", "ForegroundNormal" ) ) );
-
         _palette.setColor( Palette::Active, Palette::NegativeText, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:View]", "ForegroundNegative" ) ) );
-        _palette.setColor( Palette::Active, Palette::ViewHover, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:View]", "DecorationHover" ) ) );
+
+        _palette.setColor( Palette::Active, Palette::ActiveWindowBackground, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[WM]", "activeBackground" ) ) );
+        _palette.setColor( Palette::Active, Palette::InactiveWindowBackground, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[WM]", "inactiveBackground" ) ) );
 
         // generate inactive and disabled palette from active, applying effects from kdeglobals
         _inactiveChangeSelectionColor = ( _kdeGlobals.getOption( "[ColorEffects:Inactive]", "ChangeSelectionColor" ).toVariant<std::string>( "false" ) == "true" );
         _palette.generate( Palette::Active, Palette::Inactive, ColorUtils::Effect( Palette::Inactive, _kdeGlobals ), _inactiveChangeSelectionColor );
         _palette.generate( Palette::Active, Palette::Disabled, ColorUtils::Effect( Palette::Disabled, _kdeGlobals ) );
-
-        // fill (overwrite) additional colors for disabled palette
-        _palette.setColor( Palette::Disabled, Palette::WindowText, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:Window]", "ForegroundInactive" ) ) );
-        _palette.setColor( Palette::Disabled, Palette::ButtonText, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:Button]", "ForegroundInactive" ) ) );
-        _palette.setColor( Palette::Disabled, Palette::SelectedText, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:Selection]", "ForegroundInactive" ) ) );
-        _palette.setColor( Palette::Disabled, Palette::TooltipText, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:Tooltip]", "ForegroundInactive" ) ) );
-        _palette.setColor( Palette::Disabled, Palette::Text, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[Colors:View]", "ForegroundInactive" ) ) );
 
         #if OXYGEN_DEBUG
         std::cerr << "Oxygen::QtSettings::loadKdePalette - palette: " << std::endl;
@@ -416,17 +504,7 @@ namespace Oxygen
         _rc.setCurrentSection( Gtk::RC::defaultSection() );
         _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  bg[NORMAL]", _palette.color( Palette::Window ) ) );
         _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  bg[PRELIGHT]", _palette.color( Palette::Window ) ) );
-
-        if( applicationName().isMozilla() || applicationName().isGoogleChrome() )
-        {
-
-            _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  bg[ACTIVE]", _palette.color( Palette::Window ) ) );
-
-        } else {
-
-            _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  bg[ACTIVE]", _palette.color( Palette::Inactive, Palette::Selected ) ) );
-
-        }
+        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  bg[ACTIVE]", _palette.color( Palette::Window ) ) );
 
         _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  bg[SELECTED]", _palette.color( Palette::Selected ) ) );
         _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  bg[INSENSITIVE]", _palette.color( Palette::Window ) ) );
@@ -462,8 +540,33 @@ namespace Oxygen
         _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  fg[NORMAL]", _palette.color( Palette::ButtonText ) ) );
         _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  fg[ACTIVE]", _palette.color( Palette::ButtonText ) ) );
         _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  fg[PRELIGHT]", _palette.color( Palette::ButtonText ) ) );
-        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  fg[INSENSITIVE]", _palette.color( Palette::Disabled, Palette::Text ) ) );
-        _rc.addToRootSection( "class \"*Button\" style \"oxygen-buttons\"" );
+        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  fg[INSENSITIVE]", _palette.color( Palette::Disabled, Palette::ButtonText ) ) );
+        _rc.addToRootSection( "class \"GtkOptionMenu\" style \"oxygen-buttons\"" );
+        _rc.addToRootSection( "widget_class \"*<GtkButton>.<GtkLabel>\" style \"oxygen-buttons\"" );
+
+        _rc.addSection( "oxygen-combobox", "oxygen-buttons" );
+        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  text[NORMAL]", _palette.color( Palette::ButtonText ) ) );
+        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  text[ACTIVE]", _palette.color( Palette::ButtonText ) ) );
+        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  text[PRELIGHT]", _palette.color( Palette::ButtonText ) ) );
+        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  text[INSENSITIVE]", _palette.color( Palette::Disabled, Palette::ButtonText ) ) );        _rc.addToRootSection( "class \"*Button\" style \"oxygen-buttons\"" );
+        _rc.addToRootSection( "widget_class \"*<GtkComboBox>.<GtkCellView>\" style \"oxygen-combobox\"" );
+
+        // checkboxes and radio buttons
+        _rc.addSection( "oxygen-checkbox-buttons", "oxygen-buttons" );
+        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  fg[NORMAL]", _palette.color( Palette::WindowText ) ) );
+        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  fg[ACTIVE]", _palette.color( Palette::WindowText ) ) );
+        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  fg[PRELIGHT]", _palette.color( Palette::WindowText ) ) );
+        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  fg[INSENSITIVE]", _palette.color( Palette::Disabled, Palette::WindowText ) ) );
+        _rc.addToRootSection( "widget_class \"*<GtkCheckButton>.<GtkLabel>\" style \"oxygen-checkbox-buttons\"" );
+
+        // progressbar labels
+        _rc.addSection( "oxygen-progressbar-labels", Gtk::RC::defaultSection() );
+        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  text[NORMAL]", _palette.color( Palette::WindowText ) ) );
+        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  text[ACTIVE]", _palette.color( Palette::WindowText ) ) );
+        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  text[PRELIGHT]", _palette.color( Palette::WindowText ) ) );
+        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  text[INSENSITIVE]", _palette.color( Palette::Disabled, Palette::WindowText ) ) );
+
+        _rc.addToRootSection( "class \"GtkProgressBar\" style \"oxygen-progressbar-labels\"" );
 
         // menu items
         _rc.addSection( "oxygen-menubar-item", "oxygen-menu-font" );
@@ -502,16 +605,11 @@ namespace Oxygen
         }
 
         // text entries
-        /*
-        to match oxygen: the Window background is used for disabled entries,
-        whereas the 'base' background is used when enabled
-        */
         _rc.addSection( "oxygen-entry", Gtk::RC::defaultSection() );
         _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  bg[NORMAL]", _palette.color( Palette::Base ) ) );
-        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  bg[INSENSITIVE]", _palette.color( Palette::Disabled, Palette::Window ) ) );
-        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  base[INSENSITIVE]", _palette.color( Palette::Disabled, Palette::Window ) ) );
+        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  bg[INSENSITIVE]", _palette.color( Palette::Disabled, Palette::Base ) ) );
+        _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  base[INSENSITIVE]", _palette.color( Palette::Disabled, Palette::Base ) ) );
         _rc.addToRootSection( "class \"GtkSpinButton\" style \"oxygen-entry\"" );
-        _rc.addToRootSection( "class \"GtkEntry\" style \"oxygen-entry\"" );
         _rc.addToRootSection( "class \"GtkEntry\" style \"oxygen-entry\"" );
         _rc.addToRootSection( "widget_class \"*<GtkComboBoxEntry>.<GtkButton>\" style \"oxygen-entry\"" );
         _rc.addToRootSection( "widget_class \"*<GtkCombo>.<GtkButton>\" style \"oxygen-entry\"" );
@@ -600,10 +698,6 @@ namespace Oxygen
             _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  font_name", fonts[FontInfo::ToolBar] ) );
             _rc.addToRootSection( "widget_class \"*<GtkToolbar>.*\" style \"oxygen-toolbar-font\"" );
         }
-
-        #if OXYGEN_DEBUG
-        std::cerr << "Oxygen::QtSettings::loadKdeFonts - done." << std::endl;
-        #endif
 
     }
 

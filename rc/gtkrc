@@ -29,11 +29,15 @@ gtk-alternative-button-order = 1
 # oxygen's generic style options
 style "oxygen-default"
 {
+    GtkPaned::handle-size = 3
 
     GtkButton::child_displacement_x = 0
     GtkButton::child_displacement_y = 0
     GtkButton::default_border = { 0, 0, 0, 0 }
     GtkButton::default_outside_border = { 0, 0, 0, 0 }
+    GtkButton::inner-border = { 2, 2, 1, 0 }
+
+    GtkToggleButton::inner-border = { 0, 0, 1, 1 }
 
     GtkCalendar::inner-border = 0
     GtkCalendar::horizontal-separation = 0
@@ -52,6 +56,7 @@ style "oxygen-default"
     GtkScale::slider-length = 15
 
     GtkScrollbar::trough-border=1
+    GtkScrollbar::stepper-size=12
     GtkScrolledWindow::scrollbar-spacing=1
     GtkStatusbar::has-resize-grip = FALSE
 
@@ -65,19 +70,18 @@ style "oxygen-default"
     GtkToolbar::shadow-type = GTK_SHADOW_NONE
 
     engine "oxygen-gtk"
-    {
-    }
+    {}
 }
 
 class "*" style "oxygen-default"
 
-# path buttons
-style "oxygen-pathbutton" = "oxygen-default"
-{
-    #add some spacing to have centered text
-    GtkButton::inner-border = { 4, 4, 1, 0 }
-}
-widget_class "*PathBar.<GtkButton>" style "oxygen-pathbutton"
+# entries
+# do not change unless also changing Entry_SideMargin in OxygenStyle.h
+style "oxygen-entry-margins" = "oxygen-default"
+{ xthickness = 5 }
+
+class "GtkEntry" style "oxygen-entry-margins"
+
 
 # menuitems padding
 style "oxygen-menubar" = "oxygen-default"
@@ -90,9 +94,7 @@ class "GtkMenuBar" style "oxygen-menubar"
 
 # menuitems padding
 style "oxygen-menubaritem" = "oxygen-default"
-{
-    xthickness = 3
-}
+{ xthickness = 3 }
 
 style "oxygen-menuitem" = "oxygen-default"
 {
@@ -131,29 +133,20 @@ style "oxygen-notebook" = "oxygen-default"
 
 class "GtkNotebook" style "oxygen-notebook"
 
-# entry margins
-style "oxygen-entry" = "oxygen-default"
-{
-    xthickness = 2
-    ythickness = 2
-    GtkEntry::inner-border = { 2, 2, 2, 2 }
-}
-
-class "GtkEntry" style "oxygen-entry"
-class "GtkSpinButton" style "oxygen-entry"
-
 # comboboxes
 style "oxygen-combobox" = "oxygen-default"
 {
+    # must set combobox frame x thickness to 0, otherwise there
+    # is a dead area between combobox text and button
     xthickness = 0
-    ythickness = 2
 }
 
 style "oxygen-combobox-frame" = "oxygen-default"
 {
     # must set combobox frame x thickness to 0, otherwise there
     # is a dead area between combobox text and button
-    xthickness = 0
+    xthickness = 4
+    ythickness = 4
 }
 
 class "GtkComboBox" style "oxygen-combobox"
@@ -165,33 +158,55 @@ style "oxygen-combobox-entry" = "oxygen-default"
     xthickness = 1
     ythickness = 1
 }
-class "GtkComboBoxEntry" style "oxygen-combobox-entry"
-widget_class "*<GtkComboBoxEntry>.<GtkButton>" style "oxygen-combobox-entry"
-widget_class "*<GtkCombo>.<GtkButton>" style "oxygen-combobox-entry"
 
-# style "oxygen-combo-entry" = "oxygen-default"
-# {
-#     xthickness = 2
-#     ythickness = 2
-# }
-# widget_class "*<GtkCombo>.<GtkEntry>" style "oxygen-combo-entry"
+class "GtkComboBoxEntry" style "oxygen-combobox-entry"
+
+style "oxygen-combobox-entry-button" = "oxygen-combobox-entry"
+{ xthickness = 2 }
+
+widget_class "*<GtkComboBoxEntry>.<GtkButton>" style "oxygen-combobox-entry-button"
+
+style "oxygen-combo-button" = "oxygen-combobox-entry"
+{ xthickness = 0 }
+
+widget_class "*<GtkCombo>.<GtkButton>" style "oxygen-combo-button"
 
 # option menu
 style "oxygen-option-menu" = "oxygen-default"
 {
-    ythickness = 1
     xthickness = 4
+    ythickness = 0
 }
 
 class "GtkOptionMenu" style "oxygen-option-menu"
 
 # vertical separators need enough room
 style "oxygen-vseparator" = "oxygen-default"
-{
-    xthickness = 3
-}
+{ xthickness = 3 }
 
 class "GtkVSeparator" style "oxygen-vseparator"
+
+# 2pixels thickness.
+style "oxygen-w2" = "oxygen-default"
+{
+    xthickness = 2
+    ythickness = 2
+}
+
+class "GtkScrolledWindow" style "oxygen-w2"
+class "GtkViewport" style "oxygen-w2"
+class "GtkFrame" style "oxygen-w2"
+class "GtkProgressBar" style "oxygen-w2"
+
+# tree headers
+style "oxygen-header" = "oxygen-default"
+{
+    xthickness = 2
+    ythickness = 0
+}
+widget_class "*<GtkTreeView>.<GtkButton>" style "oxygen-header"
+widget_class "*<GtkList>.<GtkButton>" style "oxygen-header"
+widget_class "*GimpThumbBox*.<GtkEventBox>.<GtkVBox>.<GtkButton>" style "oxygen-header"
 
 #############
 # Workarounds
@@ -205,25 +220,4 @@ style "oxygen-gimp-scale"
 }
 
 class "*" style "oxygen-gimp-scale"
-
-# 2pixels thickness.
-style "oxygen-w2" = "oxygen-default"
-{
-    xthickness = 2
-    ythickness = 2
-}
-
-class "GtkScrolledWindow" style "oxygen-w2"
-class "GtkViewport" style "oxygen-w2"
-class "GtkFrame" style "oxygen-w2"
-
-# tree headers
-style "oxygen-header" = "oxygen-default"
-{
-    xthickness = 2
-    ythickness = 0
-}
-widget_class "*<GtkTreeView>.<GtkButton>" style "oxygen-header"
-widget_class "*<GtkList>.<GtkButton>" style "oxygen-header"
-widget_class "*GimpThumbBox*.<GtkEventBox>.<GtkVBox>.<GtkButton>" style "oxygen-header"
 

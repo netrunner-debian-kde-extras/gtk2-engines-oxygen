@@ -33,10 +33,17 @@
 namespace Oxygen
 {
 
-    //! gdkRectangle streamer
+    //! GdkRectangle streamer
     inline std::ostream& operator << (std::ostream& out, const GdkRectangle& rect )
     {
         out << "( " << rect.x << "," << rect.y << "," << rect.width << "," << rect.height << ")";
+        return out;
+    }
+
+    //! GtkBorder streamer
+    inline std::ostream& operator << (std::ostream& out, const GtkBorder& border )
+    {
+        out << "( " << border.left << "," << border.right << "," << border.top << "," << border.bottom << ")";
         return out;
     }
 
@@ -52,17 +59,24 @@ namespace Oxygen
             MidButton = 3
         };
 
+        //! returns true if widget's layout is reversed
+        inline bool gtk_widget_layout_is_reversed( GtkWidget* widget )
+        { return widget ? gtk_widget_get_direction( widget ) == GTK_TEXT_DIR_RTL : false; }
+
         //! set all buttons in the container to state NORMAL
         void gtk_container_adjust_buttons_state( GtkContainer*, gpointer=0L );
 
         //! returns true if is an Gnome applet
-        bool gtk_widget_is_panel_applet( GtkWidget* );
+        bool gtk_widget_is_applet( GtkWidget* );
 
         //! print some widget information
         void gtk_widget_print_tree( GtkWidget* );
 
         //! returns true if widget supports rgba
         bool gtk_widget_has_rgba( GtkWidget* );
+
+        //! returns true if default screen is composited
+        bool gdk_default_screen_is_composited( void );
 
         //! returns true if window supports rgba
         bool gdk_window_has_rgba( GdkWindow* );
@@ -74,7 +88,7 @@ namespace Oxygen
         bool gdk_window_nobackground( GdkWindow* );
 
         //! true if object match a given type
-        bool gtk_object_is_a( const GObject*, const std::string& );
+        bool g_object_is_a( const GObject*, const std::string& );
 
         //! trigger area update using GdkRectangle
         inline void gtk_widget_queue_draw( GtkWidget* widget, const GdkRectangle* rect = 0L )
@@ -128,6 +142,9 @@ namespace Oxygen
         /*! adapted from QtCurve code */
         bool gtk_progress_bar_is_horizontal( GtkWidget* );
 
+        //! true if scrolled window must be forced to have a sunken frame
+        bool gtk_scrolled_window_force_sunken( GtkWidget* );
+
         //!@name button utilities
         //@{
 
@@ -136,6 +153,9 @@ namespace Oxygen
 
         //! true for buttons in path bars
         bool gtk_button_is_in_path_bar( GtkWidget* widget );
+
+        //! true if widget is last in path bar
+        bool gtk_path_bar_button_is_last( GtkWidget* widget );
 
         //! returns an image on button-container
         GtkWidget* gtk_button_find_image( GtkWidget* );

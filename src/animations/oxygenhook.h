@@ -1,6 +1,9 @@
+#ifndef oxygenhook_h
+#define oxygenhook_h
 /*
 * this file is part of the oxygen gtk engine
 * Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Ruslan Kabatsayev <b7.10110111@gmail.com>
 *
 * This  library is free  software; you can  redistribute it and/or
 * modify it  under  the terms  of the  GNU Lesser  General  Public
@@ -18,20 +21,45 @@
 * MA 02110-1301, USA.
 */
 
-#include "oxygencairopattern.h"
+#include <gtk/gtk.h>
+#include <string>
 
 namespace Oxygen
 {
-
-    //_____________________________________________________-
-    void Cairo::Pattern::free( void )
+    //! handles gtk signal hooks
+    class Hook
     {
-        if( _pattern )
-        {
-            cairo_pattern_destroy( _pattern );
-            _pattern = 0L;
-        }
+        public:
 
-    }
+        //! constructor
+        Hook( void ):
+            _signalId(0),
+            _hookId(0)
+        {}
+
+        //! destructor
+        virtual ~Hook( void )
+        {}
+
+
+
+        //! connect
+        void connect( const std::string&, GType, GSignalEmissionHook, gpointer );
+
+        void connect( const std::string& signal, GSignalEmissionHook hook, gpointer data )
+        { connect( signal, GTK_TYPE_WIDGET, hook, data ); }
+
+        //! disconnect
+        void disconnect( void );
+
+        private:
+
+        //! signal id
+        guint _signalId;
+        gulong _hookId;
+
+    };
 
 }
+
+#endif

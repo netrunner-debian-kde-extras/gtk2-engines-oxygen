@@ -38,6 +38,7 @@ namespace Oxygen
     //_________________________________________________
     WindowManager::WindowManager( void ):
         _mode( Full ),
+        _hooksInitialized( false ),
         _drag( false ),
         _dragDistance( 4 ),
         _dragDelay( 500 ),
@@ -45,13 +46,29 @@ namespace Oxygen
         _lastRejectedEvent( 0L ),
         _x(-1),
         _y(-1)
-    { initializeBlackList(); }
+    {
+
+        // black list
+        initializeBlackList();
+
+    }
 
     //_________________________________________________
     WindowManager::~WindowManager( void )
     {
+        _buttonReleaseHook.disconnect();
         _map.disconnectAll();
         _map.clear();
+    }
+
+    //_________________________________________________
+    void WindowManager::initializeHooks( void )
+    {
+
+        if( _hooksInitialized ) return;
+        _buttonReleaseHook.connect( "button-release-event", (GSignalEmissionHook)buttonReleaseHook, this );
+        _hooksInitialized = true;
+
     }
 
     //_________________________________________________
@@ -76,6 +93,18 @@ namespace Oxygen
             << std::endl;
         #endif
 
+        /*
+        check event mask (for now we only need to do that for GtkWindow)
+        The idea is that if the window has been set to recieve button_press and button_release events
+        (which is not done by default), it likely means that it does something with such events,
+        in which case we should not use them for grabbing
+        */
+        if(
+            std::string( G_OBJECT_TYPE_NAME( widget ) ) == "GtkWindow" &&
+            (gtk_widget_get_events ( widget ) &
+            (GDK_BUTTON_PRESS_MASK|GDK_BUTTON_RELEASE_MASK) ) )
+        { return; }
+
         // Force widget to listen to relevant events
         gtk_widget_add_events( widget,
             GDK_BUTTON_RELEASE_MASK |
@@ -88,8 +117,6 @@ namespace Oxygen
 
         // connect signals
         if( _mode != Disabled ) connect( widget, data );
-
-        return;
 
     }
 
@@ -173,28 +200,12 @@ namespace Oxygen
     }
 
     //_________________________________________________
-    gboolean WindowManager::wmButtonRelease(GtkWidget *widget, GdkEventButton* event, gpointer data )
-    {
-
-        #if OXYGEN_DEBUG
-        std::cerr << "Oxygen::WindowManager::wmButtonRelease -"
-            << " event: " << event
-            << " widget: " << widget
-            << " (" << G_OBJECT_TYPE_NAME( widget ) << ")"
-            << " " << gtk_widget_get_name( widget )
-            << std::endl;
-        #endif
-
-        return static_cast<WindowManager*>( data )->finishDrag( widget );
-    }
-
-    //_________________________________________________
-    gboolean WindowManager::wmLeave(GtkWidget *widget, GdkEventCrossing*, gpointer data )
-    { return static_cast<WindowManager*>( data )->finishDrag( widget ); }
+    gboolean WindowManager::wmLeave(GtkWidget*, GdkEventCrossing*, gpointer data )
+    { return (gboolean) static_cast<WindowManager*>( data )->finishDrag(); }
 
     //_________________________________________________
     gboolean WindowManager::wmMotion( GtkWidget *widget, GdkEventMotion* event, gpointer data )
-    { return static_cast<WindowManager*>(data)->startDrag( widget, event ); }
+    { return (gboolean) static_cast<WindowManager*>(data)->startDrag( widget, event ); }
 
     //_________________________________________________________________
     gboolean WindowManager::startDelayedDrag( gpointer data )
@@ -203,33 +214,36 @@ namespace Oxygen
         return FALSE;
     }
 
-    //_________________________________________________
-    bool WindowManager::isWindowDragWidget( GtkWidget* widget, GdkEventButton* event )
+    //_________________________________________________________________
+    gboolean WindowManager::buttonReleaseHook( GSignalInvocationHint*, guint, const GValue* params, gpointer data )
     {
-        if( _mode == Disabled ) return false;
-        else if( (!_drag) && withinWidget(widget, event ) && useEvent( widget, event ) )
+
+        // get widget from params
+        GtkWidget* widget( GTK_WIDGET( g_value_get_object( params ) ) );
+        if( !GTK_IS_WIDGET( widget ) ) return FALSE;
+
+        // cast data to window manager
+        WindowManager &manager( *static_cast<WindowManager*>(data ) );
+
+        // check mode
+        if( manager._mode == Disabled ) return TRUE;
+
+        // check if drag is in progress, and reset if yes
+        if( manager._drag )
         {
 
-            // store widget and event position
-            _widget = widget;
-            _x = int(event->x_root);
-            _y = int(event->y_root);
+            #if OXYGEN_DEBUG
+            std::cerr << "Oxygen::WindowManager::buttonReleaseHook -"
+                << " widget: " << widget
+                << " (" << G_OBJECT_TYPE_NAME( widget ) << ")"
+                << " " << gtk_widget_get_name( widget )
+                << std::endl;
+            #endif
+            manager.finishDrag();
 
-            // start timer
-            if( _timer.isRunning() ) _timer.stop();
-            _timer.start( _dragDelay, (GSourceFunc)startDelayedDrag, this );
-
-            // enable drag and accept
-            _drag = true;
-            return true;
-
-        } else {
-
-            // mark event as rejected
-            _lastRejectedEvent = event;
-            return false;
         }
 
+        return TRUE;
     }
 
     //_________________________________________________________________
@@ -280,12 +294,15 @@ namespace Oxygen
             &xev);
 
         // force a release as some widgets miss it...
-        wmButtonRelease( widget, 0L, this );
+        finishDrag();
+
+        // wmButtonRelease( widget, 0L, this );
+
         return true;
     }
 
     //_________________________________________________
-    bool WindowManager::finishDrag( GtkWidget* widget )
+    bool WindowManager::finishDrag( void )
     {
 
         _widget = 0L;
@@ -293,10 +310,12 @@ namespace Oxygen
         _x = -1;
         _y = -1;
 
+        // stop timer
+        if( _timer.isRunning() ) _timer.stop();
+
         if( _drag )
         {
 
-            gtk_grab_remove(widget);
             gdk_pointer_ungrab( CurrentTime );
             _drag = false;
             return true;
@@ -306,44 +325,77 @@ namespace Oxygen
     }
 
     //_________________________________________________
+    bool WindowManager::isWindowDragWidget( GtkWidget* widget, GdkEventButton* event )
+    {
+        if( _mode == Disabled ) return false;
+        else if( (!_drag) && withinWidget(widget, event ) && useEvent( widget, event ) )
+        {
+
+            // store widget and event position
+            _widget = widget;
+            _x = int(event->x_root);
+            _y = int(event->y_root);
+
+            // start timer
+            if( _timer.isRunning() ) _timer.stop();
+            _timer.start( _dragDelay, (GSourceFunc)startDelayedDrag, this );
+
+            // enable drag and accept
+            _drag = true;
+            return true;
+
+        } else {
+
+            // mark event as rejected
+            _lastRejectedEvent = event;
+            return false;
+        }
+
+    }
+
+    //_________________________________________________
     bool WindowManager::withinWidget( GtkWidget* widget, GdkEventButton* event ) const
     {
 
-        // get widget window
-        GdkWindow *window( gtk_widget_get_window( widget ) );
+        // get top level widget
+        GtkWidget* topLevel( gtk_widget_get_toplevel( widget ) );
+        if( !topLevel ) return true;
 
-        // Some widgets aren't realized (GeditWindow for exemple) ...
+        // get top level window;
+        GdkWindow *window( gtk_widget_get_window( topLevel ) );
         if( !window ) return true;
 
-        GtkAllocation allocation;
+        // translate widget position to topLevel
+        int wx(0);
+        int wy(0);
+        gtk_widget_translate_coordinates( widget, topLevel, wx, wy, &wx, &wy );
 
+        // translate to absolute coordinates
+        int nx(0);
+        int ny(0);
+        gdk_window_get_origin( window, &nx, &ny );
+        wx += nx;
+        wy += ny;
+
+        // get widget size.
+        // for notebooks, only consider the tabbar rect
+        GtkAllocation allocation;
         if( GTK_IS_NOTEBOOK( widget ) )
         {
 
             Gtk::gtk_notebook_get_tabbar_rect( GTK_NOTEBOOK( widget ), &allocation );
+            allocation.x += wx - widget->allocation.x;
+            allocation.y += wy - widget->allocation.y;
 
         } else {
 
-            #if GTK_CHECK_VERSION(2, 18, 0)
-            gtk_widget_get_allocation( widget, &allocation );
-            #else
             allocation = widget->allocation;
-            #endif
+            allocation.x = wx;
+            allocation.y = wy;
 
         }
 
-        // translate to current window
-        int nx(0);
-        int ny(0);
-        gdk_window_get_geometry( window, &nx, &ny, 0L, 0L, 0L );
-        allocation.x -= nx;
-        allocation.y -= ny;
-
-        // translate absolute coordinates
-        gdk_window_get_origin(window, &nx, &ny );
-        allocation.x += nx;
-        allocation.y += ny;
-
+        // compare to event root position
         return Gtk::gdk_rectangle_contains( &allocation, int(event->x_root), int(event->y_root) );
 
     }
@@ -433,7 +485,7 @@ namespace Oxygen
             #if OXYGEN_DEBUG
             std::cerr << "Oxygen::WindowManager::childrenUseEvent -"
                 << " event: " << event
-                << " widget: " << widget
+                << " widget: " << childWidget
                 << " (" << G_OBJECT_TYPE_NAME( childWidget ) << ")"
                 << " " << gtk_widget_get_name( childWidget )
                 << " usable: " << usable
@@ -467,7 +519,6 @@ namespace Oxygen
         data._styleId.connect( G_OBJECT( widget ), "style-set", G_CALLBACK( wmStyleSet ), this );
 
         data._pressId.connect( G_OBJECT( widget ), "button-press-event", G_CALLBACK( wmButtonPress ), this );
-        data._releaseId.connect( G_OBJECT( widget ), "button-release-event", G_CALLBACK( wmButtonRelease ), this );
         data._leaveId.connect( G_OBJECT( widget ), "leave-notify-event", G_CALLBACK( wmLeave ), this );
         data._motionId.connect( G_OBJECT( widget ), "motion-notify-event", G_CALLBACK( wmMotion ), this );
     }
@@ -479,7 +530,6 @@ namespace Oxygen
         _leaveId.disconnect();
         _destroyId.disconnect();
         _pressId.disconnect();
-        _releaseId.disconnect();
         _motionId.disconnect();
         _styleId.disconnect();
 
