@@ -1,5 +1,6 @@
-gtk2-engines-oxygen (1.0.2-3) UNRELEASED; urgency=low
+gtk2-engines-oxygen (1.0.3-1) UNRELEASED; urgency=low
 
+  * New upstream version.
   * debian/rules: Added "--parallel" to dh_auto_configure invocation.
   * debian/watch: Added "git-import-orig" as a command.
 
