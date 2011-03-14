@@ -26,13 +26,9 @@
 #include "config.h"
 
 #include <gtk/gtk.h>
-#include <sys/stat.h>
 
 #include <cassert>
-#include <fstream>
 #include <iostream>
-#include <string>
-#include <vector>
 
 namespace Oxygen
 {
@@ -93,7 +89,7 @@ namespace Oxygen
     {
 
         // retrieve widget style and check
-        GtkStyle* style( widget->style );
+        GtkStyle* style( gtk_widget_get_style( widget ) );
         if( !( style && style->depth >= 0 ) ) return;
 
         // adjust depth

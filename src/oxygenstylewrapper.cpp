@@ -37,7 +37,6 @@
 #include "oxygengtkdetails.h"
 #include "oxygengtktypenames.h"
 #include "oxygengtkutils.h"
-#include "oxygenrcstyle.h"
 #include "oxygenstyle.h"
 #include "oxygenwindowmanager.h"
 
@@ -93,8 +92,7 @@ namespace Oxygen
 
             // do nothing for mozilla, acrobat, gnome applets, and other hint-specific windows
             if(
-                Style::instance().settings().applicationName().isMozilla( widget ) ||
-                Style::instance().settings().applicationName().isAcrobat( widget ) ||
+                Style::instance().settings().applicationName().useFlatBackground( widget ) ||
                 Gtk::gtk_widget_is_applet( widget ) ||
                 Gtk::gdk_window_nobackground( window ) )
             { return; }
@@ -146,9 +144,7 @@ namespace Oxygen
 
             // for mozilla and openoffice
             // fill with flat color
-            if( Style::instance().settings().applicationName().isMozilla( widget ) ||
-                Style::instance().settings().applicationName().isAcrobat( widget ) ||
-                Style::instance().settings().applicationName().isOpenOffice() )
+            if( Style::instance().settings().applicationName().useFlatBackground( widget ) )
             {
                 Style::instance().fill( window, clipRect, x, y, w, h, Palette::Window );
                 return;
@@ -182,7 +178,7 @@ namespace Oxygen
 
             // mozilla and openoffice get square non Argb tooltips no matter what
             if(
-                Style::instance().settings().applicationName().isOpenOffice() &&
+                Style::instance().settings().applicationName().isOpenOffice() ||
                 Style::instance().settings().applicationName().isMozilla() )
             {
                 Style::instance().renderTooltipBackground( window, clipRect, x, y, w, h, StyleOptions() );
@@ -196,7 +192,7 @@ namespace Oxygen
 
                 // make tooltips appear rounded using XShape extension if screen isn't composited
                 Style::instance().animations().widgetSizeEngine().registerWidget( widget );
-                const GtkAllocation& allocation( widget->allocation );
+                const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( widget ) );
                 const bool sizeChanged( Style::instance().animations().widgetSizeEngine().updateSize( widget, allocation.width, allocation.height ) );
                 if( sizeChanged && ( gtk_widget_is_toplevel(widget) || GTK_IS_WINDOW(widget) ) )
                 {
@@ -352,20 +348,65 @@ namespace Oxygen
             { options |= NoFill; }
 
             // calculate proper offsets so that the glow/shadow match parent frame
-            const int xOffset( style ? style->xthickness + 1 - Style::Entry_SideMargin : 3 );
-            const int yOffset( style ? style->ythickness + 1 : 3);
+            const int xOffset( style->xthickness + 1 - Style::Entry_SideMargin );
 
-            // there is no need to render anything if both offsets are larger than 4
-            if( xOffset > 4 && yOffset > 4 ) return;
-
-            // adjust rect using offsets above
+            // adjust horizontal positioning and width
             x -= xOffset;
-            y -= yOffset;
             w += 2*xOffset;
-            h += 2*yOffset;
 
-            if( GTK_IS_SPIN_BUTTON( widget ) )
+            if( GtkWidget* parent = Gtk::gtk_parent_combobox_entry( widget ) )
             {
+
+                // check if parent is in style map
+                Style::instance().animations().comboBoxEntryEngine().registerWidget( parent );
+                Style::instance().animations().comboBoxEntryEngine().setEntry( parent, widget );
+                Style::instance().animations().comboBoxEntryEngine().setEntryFocus( parent, options & Focus );
+
+                if( state != GTK_STATE_INSENSITIVE )
+                {
+                    if( Style::instance().animations().comboBoxEntryEngine().hasFocus( parent ) ) options |= Focus;
+                    else options &= ~Focus;
+
+                    if(  Style::instance().animations().comboBoxEntryEngine().hovered( parent ) ) options |= Hover;
+                    else options &= ~Hover;
+                }
+
+                /*
+                for some reason, adjusting y and h using ythickness does not work for combobox_entry
+                one need to use parent allocation instead
+                */
+                const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( parent ) );
+                y -= (allocation.height-h + 1)/2;
+                h = allocation.height;
+
+                // partial highlight
+                TileSet::Tiles tiles( TileSet::Ring );
+
+                if( Gtk::gtk_widget_layout_is_reversed( widget ) )
+                {
+
+                    // hide left part and increase width
+                    tiles &= ~TileSet::Left;
+                    Style::instance().renderHole( window, clipRect, x-7, y, w+7, h, options, tiles );
+
+                } else {
+
+                    // hide right part and increase width
+                    tiles &= ~TileSet::Right;
+                    Style::instance().renderHole( window, clipRect, x, y, w+7, h, options, tiles );
+
+                }
+
+            } else if( GTK_IS_SPIN_BUTTON( widget ) ) {
+
+                const int yOffset( style->ythickness + 1 );
+
+                // there is no need to render anything if both offsets are larger than 4
+                if( xOffset > 4 && yOffset > 4 ) return;
+
+                // adjust vertical positioning and height
+                y -= yOffset;
+                h += 2*yOffset;
 
                 // for openoffice only draw solid window background
                 // the rest of the spinbutton is painted on top, in draw_box and draw_shadow
@@ -402,44 +443,16 @@ namespace Oxygen
 
                 }
 
-            } else if( GtkWidget* parent = Gtk::gtk_parent_combobox_entry( widget ) ) {
+            } else  {
 
-                // check if parent is in style map
-                Style::instance().animations().comboBoxEntryEngine().registerWidget( parent );
-                Style::instance().animations().comboBoxEntryEngine().setEntry( parent, widget );
-                Style::instance().animations().comboBoxEntryEngine().setEntryFocus( parent, options & Focus );
+                const int yOffset( style->ythickness + 1 );
 
-                if( state != GTK_STATE_INSENSITIVE )
-                {
-                    if( Style::instance().animations().comboBoxEntryEngine().hasFocus( parent ) ) options |= Focus;
-                    else options &= ~Focus;
+                // there is no need to render anything if both offsets are larger than 4
+                if( xOffset > 4 && yOffset > 4 ) return;
 
-                    if(  Style::instance().animations().comboBoxEntryEngine().hovered( parent ) ) options |= Hover;
-                    else options &= ~Hover;
-                }
-
-                // since combobox entry is drawn in the combobox full height, we'll have to adjust glow height
-                y -= (parent->allocation.height-h)/2;
-                h = parent->allocation.height;
-
-                // partial highlight
-                TileSet::Tiles tiles( TileSet::Ring );
-
-                if( Gtk::gtk_widget_layout_is_reversed( widget ) )
-                {
-
-                    // hide left part and increase width
-                    tiles &= ~TileSet::Left;
-                    Style::instance().renderHole( window, clipRect, x-7, y, w+7, h, options, tiles );
-
-                } else {
-
-                    // hide right part and increase width
-                    tiles &= ~TileSet::Right;
-                    Style::instance().renderHole( window, clipRect, x, y, w+7, h, options, tiles );
-
-                }
-            } else {
+                // adjust vertical positioning and height
+                y -= yOffset;
+                h += 2*yOffset;
 
                 if(
                     Style::instance().animations().hoverEngine().contains( widget ) &&
@@ -448,10 +461,11 @@ namespace Oxygen
 
                 // compare painting rect to widget rect, to decide if some sides are to be masked
                 TileSet::Tiles tiles = TileSet::Ring;
-                if( widget && window != widget->window && GDK_IS_WINDOW( window ) && widget->window == gdk_window_get_parent( window )  )
+                GdkWindow* widgetWindow( gtk_widget_get_window( widget ) );
+                if( widget && window != widgetWindow && GDK_IS_WINDOW( window ) && widgetWindow == gdk_window_get_parent( window )  )
                 {
 
-                    const int widgetWindowWidth( widget->allocation.width );
+                    const int widgetWindowWidth( Gtk::gtk_widget_get_allocation( widget ).width );
                     int localWindowX( 0 );
                     int localWindowWidth( 0 );
                     gdk_window_get_position( window, &localWindowX, 0L );
@@ -838,21 +852,17 @@ namespace Oxygen
 
         } else if( d.isMenuBar() || d.isToolBar() ) {
 
-            // https://bugzilla.gnome.org/show_bug.cgi?id=635511
-            if( !Style::instance().settings().applicationName().isMozilla( widget ) &&
-                !Style::instance().settings().applicationName().isAcrobat( widget ) &&
-                !Style::instance().settings().applicationName().isOpenOffice() &&
-                !Gtk::gtk_widget_is_applet( widget ) )
-            {
-                Style::instance().windowManager().registerWidget( widget );
-                Style::instance().renderWindowBackground( window, clipRect, x, y, w, h );
-            }
+            if( Style::instance().settings().applicationName().useFlatBackground( widget ) ||
+                Gtk::gtk_widget_is_applet( widget ) )
+                { return; }
 
+            Style::instance().windowManager().registerWidget( widget );
+            Style::instance().renderWindowBackground( window, clipRect, x, y, w, h );
             return;
 
         } else if( d.isMenu() ) {
 
-            if( GTK_IS_MENU( widget ) && GTK_MENU( widget )->torn_off )
+            if( GTK_IS_MENU( widget ) && gtk_menu_get_tearoff_state( GTK_MENU( widget ) ) )
             {
 
                 Style::instance().renderWindowBackground( window, widget, clipRect, x, y, w, h );
@@ -886,7 +896,7 @@ namespace Oxygen
 
                         // make menus appear rounded using XShape extension if screen isn't composited
                         Style::instance().animations().widgetSizeEngine().registerWidget( widget );
-                        const GtkAllocation& allocation( widget->allocation );
+                        const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( widget ) );
                         if( Style::instance().animations().widgetSizeEngine().updateSize( widget, allocation.width, allocation.height ) )
                         {
                             GdkPixmap* mask( Style::instance().helper().roundMask( w, h - 2*Style::Menu_VerticalOffset ) );
@@ -925,12 +935,15 @@ namespace Oxygen
 
         } else if( d.isMenuItem() ) {
 
-            StyleOptions options = StyleOptions( widget, state, shadow );
+            StyleOptions options( widget, state, shadow );
+            if( !Style::instance().settings().applicationName().useFlatBackground( widget ) )
+            { options |= Blend; }
+
             Style::instance().renderMenuItemRect( window, clipRect, widget, x, y, w, h, options );
 
         } else if( d.isTroughAny() && GTK_IS_SCALE( widget ) ) {
 
-            const bool vertical( gtk_orientable_get_orientation( GTK_ORIENTABLE( widget ) ) == GTK_ORIENTATION_VERTICAL );
+            const bool vertical( Gtk::gtk_widget_is_vertical( widget ) );
             const int offset( 6 );
             if( vertical ) {
 
@@ -969,7 +982,7 @@ namespace Oxygen
                 }
 
                 StyleOptions options;
-                if( !Gtk::gtk_progress_bar_is_horizontal( widget ) ) options |= Vertical;
+                if( Gtk::gtk_widget_is_vertical( widget ) ) options |= Vertical;
                 Style::instance().renderProgressBarHole( window, clipRect, x, y, w, h, options );
 
             } else if( GTK_IS_VSCROLLBAR( widget ) ) {
@@ -1091,8 +1104,7 @@ namespace Oxygen
             {
 
                 // get orientation
-                const GtkProgressBarOrientation orientation( gtk_progress_bar_get_orientation( GTK_PROGRESS_BAR( widget ) ) );
-                if( orientation == GTK_PROGRESS_TOP_TO_BOTTOM || orientation == GTK_PROGRESS_BOTTOM_TO_TOP )
+                if( Gtk::gtk_widget_is_vertical( widget ) )
                 { options |= Vertical; }
 
                 Style::instance().renderProgressBarHandle( window, clipRect, x, y, w, h, options );
@@ -1162,6 +1174,7 @@ namespace Oxygen
         if( d.is("GnmItemBarCell") )
         { return; }
 
+        // adjust shadow type for some known widgets
         if( d.isScrolledWindow() &&
             shadow != GTK_SHADOW_IN &&
             GTK_IS_SCROLLED_WINDOW( widget ) &&
@@ -1171,6 +1184,18 @@ namespace Oxygen
             // make sure that scrolled windows containing a treeView have sunken frame
             shadow = GTK_SHADOW_IN;
             gtk_scrolled_window_set_shadow_type( GTK_SCROLLED_WINDOW( widget ), GTK_SHADOW_IN );
+
+        } else if(
+            d.isFrame() &&
+            ( shadow == GTK_SHADOW_ETCHED_IN || shadow == GTK_SHADOW_ETCHED_OUT ) &&
+            GTK_IS_FRAME( widget ) &&
+            Gtk::gtk_scrolled_window_force_sunken( widget )
+            )
+        {
+
+            // make sure that entry shadows are drawn
+            shadow = GTK_SHADOW_IN;
+            gtk_frame_set_shadow_type( GTK_FRAME( widget ), GTK_SHADOW_IN );
 
         } else if( d.isEntry() && shadow != GTK_SHADOW_IN ) {
 
@@ -1188,7 +1213,7 @@ namespace Oxygen
             if( Gtk::gtk_widget_has_rgba(parent) ) options|=Alpha;
 
             // store parent allocation
-            GtkAllocation allocation(parent->allocation);
+            GtkAllocation allocation( Gtk::gtk_widget_get_allocation( parent ) );
 
             if( !(options&Alpha) )
             {
@@ -1198,7 +1223,7 @@ namespace Oxygen
                 if( Style::instance().animations().widgetSizeEngine().updateSize( parent, allocation.width, allocation.height ) )
                 {
                     GdkPixmap* mask( Style::instance().helper().roundMask( allocation.width, allocation.height ) );
-                    gdk_window_shape_combine_mask( parent->window, mask, 0, 0 );
+                    gdk_window_shape_combine_mask( gtk_widget_get_window( parent ), mask, 0, 0 );
                     gdk_pixmap_unref( mask );
                 }
 
@@ -1208,18 +1233,19 @@ namespace Oxygen
             {
                 widget=GTK_WIDGET( g_list_first(children)->data );
                 Style::instance().animations().widgetSizeEngine().registerWidget( widget );
-                if( Style::instance().animations().widgetSizeEngine().updateSize( widget, widget->allocation.width, widget->allocation.height) )
+                const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( widget ) );
+                if( Style::instance().animations().widgetSizeEngine().updateSize( widget, allocation.width, allocation.height ) )
                 {
 
                     // offset is needed to make combobox list border 3px wide instead of default 2
                     // additional pixel is for ugly shadow
                     const gint offset( options&Alpha ? 0:1 );
                     GdkPixmap* mask( Style::instance().helper().roundMask(
-                        widget->allocation.width - 2*offset,
-                        widget->allocation.height - 2*offset,
+                        allocation.width - 2*offset,
+                        allocation.height - 2*offset,
                         3 ) );
 
-                    gdk_window_shape_combine_mask( widget->window, mask, offset, offset );
+                    gdk_window_shape_combine_mask( gtk_widget_get_window( widget ), mask, offset, offset );
                     gdk_pixmap_unref( mask );
                 }
 
@@ -1228,8 +1254,9 @@ namespace Oxygen
             }
 
             // menu background and float frame
-            Style::instance().renderMenuBackground( parent->window, clipRect, allocation.x, allocation.y, allocation.width, allocation.height, options );
-            Style::instance().drawFloatFrame( parent->window, clipRect, allocation.x, allocation.y, allocation.width, allocation.height, options );
+            GdkWindow* parentWindow( gtk_widget_get_window( parent ) );
+            Style::instance().renderMenuBackground( parentWindow, clipRect, allocation.x, allocation.y, allocation.width, allocation.height, options );
+            Style::instance().drawFloatFrame( parentWindow, clipRect, allocation.x, allocation.y, allocation.width, allocation.height, options );
 
             #if ENABLE_COMBOBOX_LIST_RESIZE
 
@@ -1249,14 +1276,15 @@ namespace Oxygen
                 int w, h;
                 GtkWindow* window( GTK_WINDOW( parent ) );
                 gtk_window_get_size( window, &w, &h );
-                if( combobox->allocation.width-6 != w )
+                const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( combobox ) );
+                if( allocation.width-6 != w )
                 {
-                    gtk_widget_set_size_request( parent, combobox->allocation.width - 6,h);
+                    gtk_widget_set_size_request( parent, allocation.width - 6, h );
 
                     gint targetX, dummy, y;
                     gtk_window_get_position( window, &dummy, &y );
-                    gdk_window_get_origin(combobox->window, &targetX, &dummy);
-                    gtk_window_move( window, targetX+combobox->allocation.x+3, y );
+                    gdk_window_get_origin( gtk_widget_get_window( combobox ), &targetX, &dummy);
+                    gtk_window_move( window, targetX + allocation.x + 3, y );
                 }
 
             }
@@ -1286,7 +1314,7 @@ namespace Oxygen
             StyleOptions options( Round );
             if( Gtk::gtk_widget_has_rgba(parent) ) options|=Alpha;
 
-            const GtkAllocation& allocation(parent->allocation);
+            const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( parent ) );
             if( !(options&Alpha) )
             {
                 // the same as with menus and tooltips (but changed a bit to take scrollbars into account)
@@ -1294,8 +1322,8 @@ namespace Oxygen
                 Style::instance().animations().widgetSizeEngine().registerWidget(parent);
                 if( Style::instance().animations().widgetSizeEngine().updateSize(parent,allocation.width,allocation.height))
                 {
-                    GdkPixmap* mask( Style::instance().helper().roundMask( allocation.width,allocation.height ) );
-                    gdk_window_shape_combine_mask(parent->window,mask,0,0);
+                    GdkPixmap* mask( Style::instance().helper().roundMask( allocation.width, allocation.height ) );
+                    gdk_window_shape_combine_mask( gtk_widget_get_window( parent ), mask, 0, 0 );
                     gdk_pixmap_unref(mask);
                 }
             }
@@ -1789,7 +1817,10 @@ namespace Oxygen
             {
                 // render background, this is needed to prevent a plain rect to be rendered (by gtk) where the item is
                 // rectangle is adjusted manually so that it matches
-                if( widget && GTK_IS_MENU( gtk_widget_get_parent( widget ) ) && GTK_MENU( gtk_widget_get_parent( widget ) )->torn_off )
+                if(
+                    widget &&
+                    GTK_IS_MENU( gtk_widget_get_parent( widget ) ) &&
+                    gtk_menu_get_tearoff_state( GTK_MENU( gtk_widget_get_parent( widget ) ) ) )
                 {
 
                     Style::instance().renderWindowBackground( window, widget, clipRect, x1-4, y-7, x2-x1+10, 20 );
@@ -1806,7 +1837,7 @@ namespace Oxygen
             if( widget )
             {
                 // do not draw side hlines because they conflict with selection rect
-                const GtkAllocation& allocation( widget->allocation );
+                const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( widget ) );
                 if( x1 <= allocation.x + 5 || x2 >= allocation.x + allocation.width - 5 )
                 { accepted = false; }
             }
@@ -1929,7 +1960,7 @@ namespace Oxygen
             if( widget &&
                 gtk_widget_get_state( widget ) != GTK_STATE_PRELIGHT &&
                 GTK_IS_MENU( gtk_widget_get_parent( widget ) ) &&
-                GTK_MENU( gtk_widget_get_parent( widget ) )->torn_off )
+                gtk_menu_get_tearoff_state( GTK_MENU( gtk_widget_get_parent( widget ) ) ) )
             { Style::instance().renderWindowBackground( window, widget, clipRect, x-8, y-8, w+16, h+16); }
 
             // disable highlight in menus, for consistancy with oxygen qt style
@@ -1980,7 +2011,6 @@ namespace Oxygen
 
             if( state != GTK_STATE_INSENSITIVE ) options &= ~Contrast;
             role = Palette::Text;
-            y+=1;
 
             if( Gtk::gtk_widget_layout_is_reversed( widget ) )
             { x+=2; }
@@ -1988,7 +2018,6 @@ namespace Oxygen
         } else if( Gtk::gtk_parent_combo( widget ) ) {
 
             role = Palette::WindowText;
-            y-=1;
 
             if( Gtk::gtk_widget_layout_is_reversed( widget ) )
             { x+=2; }
@@ -2011,7 +2040,9 @@ namespace Oxygen
             if( d.isArrow() && GTK_IS_ARROW( widget ) )
             {
 
-                x += 1;
+                //if( arrow == GTK_ARROW_DOWN || arrow == GTK_ARROW_UP )
+                { x += 1; }
+
                 role = Palette::WindowText;
             }
 
@@ -2215,18 +2246,12 @@ namespace Oxygen
             const Gtk::Gap gap( gap_x, gap_w, position );
             if( shadow == GTK_SHADOW_IN ) {
 
-                Style::instance().renderHoleBackground( window, clipRect, x-1, y-1, w+2, h+2 );
-
-                x += Style::Entry_SideMargin;
-                w -= 2*Style::Entry_SideMargin;
+                Style::instance().renderHoleBackground( window, clipRect, x-1-Style::Entry_SideMargin, y-1, w+2+2*Style::Entry_SideMargin, h+2 );
                 Style::instance().renderHole( window, clipRect, x-1, y-1, w+2, h+1, gap, NoFill );
 
             } else if( shadow == GTK_SHADOW_OUT ) {
 
-                StyleOptions options( NoFill );
-                options |= StyleOptions( widget, GTK_STATE_NORMAL, shadow );
-                options &= ~(Hover|Focus);
-                Style::instance().renderSlab( window, clipRect, x-1, y-4, w+2, h+4, gap, options );
+                Style::instance().renderSlab( window, clipRect, x-1, y-4, w+2, h+4, gap, NoFill );
 
             } else if( shadow == GTK_SHADOW_ETCHED_IN || shadow == GTK_SHADOW_ETCHED_OUT ) {
 
@@ -2497,7 +2522,7 @@ namespace Oxygen
                 // update drag in progress flag
                 if( isCurrentTab )
                 {
-                    bool drag( widget && (window != widget->window ) );
+                    bool drag( widget && (window != gtk_widget_get_window( widget ) ) );
                     Style::instance().animations().tabWidgetEngine().setDragInProgress( widget, drag );
                 }
 
@@ -2507,7 +2532,7 @@ namespace Oxygen
                 if( dragInProgress )
                 {
                     drawTabBarBase = ((tabOptions & FirstTab) && !isCurrentTab) ||
-                        ((tabOptions & LastTab) && Gtk::gtk_notebook_get_current_tab( notebook ) == 0 );
+                        ((tabOptions & LastTab) && gtk_notebook_get_current_page( notebook ) == 0 );
                 }
 
             }
@@ -2529,11 +2554,12 @@ namespace Oxygen
             if( drawTabBarBase )
             {
 
+                const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( widget ) );
                 int borderWidth( GTK_IS_CONTAINER( widget ) ? gtk_container_get_border_width( GTK_CONTAINER( widget ) ):0 );
-                int xBase( widget->allocation.x + borderWidth );
-                int yBase( widget->allocation.y + borderWidth );
-                int wBase( widget->allocation.width - 2*borderWidth );
-                int hBase( widget->allocation.height - 2*borderWidth );
+                int xBase( allocation.x + borderWidth );
+                int yBase( allocation.y + borderWidth );
+                int wBase( allocation.width - 2*borderWidth );
+                int hBase( allocation.height - 2*borderWidth );
 
                 Gtk::Gap gap;
                 switch( position )
@@ -2763,12 +2789,7 @@ namespace Oxygen
         GdkPixbuf *stated( scaled );
 
         // non-flat pushbuttons don't have any icon effect
-        bool noEffect=false;
-        if(GtkWidget* button=Gtk::gtk_parent_button(widget))
-        {
-            if(gtk_button_get_relief(GTK_BUTTON(button))==GTK_RELIEF_NORMAL)
-                noEffect=true;
-        }
+        const bool useEffect( Style::instance().settings().useIconEffect() && Gtk::gtk_button_is_flat( Gtk::gtk_parent_button( widget ) ) );
 
         if( gtk_icon_source_get_state_wildcarded( source ) )
         {
@@ -2780,12 +2801,16 @@ namespace Oxygen
                 gdk_pixbuf_saturate_and_pixelate( stated, stated, 0.1, false );
                 g_object_unref (scaled);
 
-            } else if (!noEffect && state == GTK_STATE_PRELIGHT) {
+            } else if( useEffect && state == GTK_STATE_PRELIGHT ) {
 
                 stated = gdk_pixbuf_copy( scaled );
-                if(!Gtk::gdk_pixbuf_to_gamma( stated, 0.5 ) )
+                if(!Gtk::gdk_pixbuf_to_gamma( stated, 0.7 ) )
                 {
                     // FIXME: correct the value to match KDE
+                    /*
+                    in fact KDE allows one to set many different effects on icon
+                    not sure we want to copy this code all over the place, especially since nobody changes the default settings,
+                    as far as I know */
                     gdk_pixbuf_saturate_and_pixelate( scaled, stated, 1.2, false );
                 }
                 g_object_unref( scaled );

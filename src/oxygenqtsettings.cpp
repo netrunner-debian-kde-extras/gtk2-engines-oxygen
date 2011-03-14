@@ -45,8 +45,9 @@ namespace Oxygen
     //_________________________________________________________
     QtSettings::QtSettings( void ):
         _kdeIconTheme( "oxygen" ),
-        _kdeFallbackIconTheme( "oxy-gnome" ),
+        _kdeFallbackIconTheme( "gnome" ),
         _inactiveChangeSelectionColor( false ),
+        _useIconEffect( true ),
         _checkBoxStyle( CS_CHECK ),
         _tabStyle( TS_SINGLE ),
         _scrollBarColored( false ),
@@ -229,14 +230,6 @@ namespace Oxygen
     }
 
     //_________________________________________________________
-    void QtSettings::initApplicationName( void )
-    {
-        const char* applicationName = g_get_prgname();
-        if( applicationName ) { _applicationName.parse( applicationName ); }
-
-    }
-
-    //_________________________________________________________
     void QtSettings::initArgb( void )
     {
         // get program name
@@ -403,17 +396,10 @@ namespace Oxygen
         _iconThemes.clear();
         _kdeIconTheme = _kdeGlobals.getOption( "[Icons]", "Theme" ).toVariant<std::string>("oxygen");
 
-        std::ostringstream themeNameStr;
-        themeNameStr << "gtk-icon-theme-name=\"" << _kdeIconTheme << "\"" << std::endl;
-        themeNameStr << "gtk-fallback-icon-theme=\"" << _kdeFallbackIconTheme << "\"";
-        _rc.addToHeaderSection( themeNameStr.str() );
-
-        // check show icons on push buttons kde option
-        const std::string showIconsOnPushButton( _kdeGlobals.getValue( "[KDE]", "ShowIconsOnPushButtons", "true" ) );
-
-        // add option
-        if( showIconsOnPushButton == "false" )
-        { _rc.addToHeaderSection( "gtk-button-images = 0\n" ); }
+        // store to settings
+        GtkSettings* settings( gtk_settings_get_default() );
+        gtk_settings_set_string_property( settings, "gtk-icon-theme-name", _kdeIconTheme.c_str(), "oxygen-gtk" );
+        gtk_settings_set_string_property( settings, "gtk-fallback-icon-theme-name", _kdeFallbackIconTheme.c_str(), "oxygen-gtk" );
 
         // load icon sizes from kde
         // const int desktopIconSize( _kdeGlobals.getOption( "[DesktopIcons]", "Size" ).toInt( 48 ) );
@@ -477,12 +463,22 @@ namespace Oxygen
         _palette.setColor( Palette::Active, Palette::ActiveWindowBackground, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[WM]", "activeBackground" ) ) );
         _palette.setColor( Palette::Active, Palette::InactiveWindowBackground, ColorUtils::Rgba::fromKdeOption( _kdeGlobals.getValue( "[WM]", "inactiveBackground" ) ) );
 
+        // load effects
+        const ColorUtils::Effect disabledEffect( Palette::Disabled, _kdeGlobals );
+        const ColorUtils::Effect inactiveEffect( Palette::Inactive, _kdeGlobals );
+
         // generate inactive and disabled palette from active, applying effects from kdeglobals
         _inactiveChangeSelectionColor = ( _kdeGlobals.getOption( "[ColorEffects:Inactive]", "ChangeSelectionColor" ).toVariant<std::string>( "false" ) == "true" );
-        _palette.generate( Palette::Active, Palette::Inactive, ColorUtils::Effect( Palette::Inactive, _kdeGlobals ), _inactiveChangeSelectionColor );
-        _palette.generate( Palette::Active, Palette::Disabled, ColorUtils::Effect( Palette::Disabled, _kdeGlobals ) );
+        _palette.generate( Palette::Active, Palette::Inactive, inactiveEffect, _inactiveChangeSelectionColor );
+        _palette.generate( Palette::Active, Palette::Disabled, disabledEffect );
 
         #if OXYGEN_DEBUG
+        std::cerr << "Oxygen::QtSettings::loadKdePalette - disabled effect: " << std::endl;
+        std::cerr << disabledEffect << std::endl;
+
+        std::cerr << "Oxygen::QtSettings::loadKdePalette - inactive effect: " << std::endl;
+        std::cerr << inactiveEffect << std::endl;
+
         std::cerr << "Oxygen::QtSettings::loadKdePalette - palette: " << std::endl;
         std::cerr << _palette << std::endl;
         #endif
@@ -677,25 +673,26 @@ namespace Oxygen
 
         // pass fonts to RC
         if( fonts[FontInfo::Default].isValid() )
-        { _rc.addToHeaderSection( Gtk::RCOption<std::string>( "gtk-font-name", fonts[FontInfo::Default] ) ); }
-
-        if( fonts[FontInfo::Default].isValid() )
         {
+            // pass to settings
+            GtkSettings* settings( gtk_settings_get_default() );
+            gtk_settings_set_string_property( settings, "gtk-font-name", fonts[FontInfo::Default].toString( false ).c_str(), "oxygen-gtk" );
+
             _rc.setCurrentSection( Gtk::RC::defaultSection() );
-            _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  font_name", fonts[FontInfo::Default] ) );
+            _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  font_name", fonts[FontInfo::Default].toString() ) );
         }
 
         if( fonts[FontInfo::Menu].isValid() )
         {
             _rc.addSection( "oxygen-menu-font", Gtk::RC::defaultSection() );
-            _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  font_name", fonts[FontInfo::Menu] ) );
+            _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  font_name", fonts[FontInfo::Menu].toString() ) );
             _rc.addToRootSection( "widget_class \"*<GtkMenuItem>.<GtkLabel>\" style \"oxygen-menu-font\"" );
         }
 
         if( fonts[FontInfo::ToolBar].isValid() )
         {
             _rc.addSection( "oxygen-toolbar-font", Gtk::RC::defaultSection() );
-            _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  font_name", fonts[FontInfo::ToolBar] ) );
+            _rc.addToCurrentSection( Gtk::RCOption<std::string>( "  font_name", fonts[FontInfo::ToolBar].toString() ) );
             _rc.addToRootSection( "widget_class \"*<GtkToolbar>.*\" style \"oxygen-toolbar-font\"" );
         }
 
@@ -710,11 +707,21 @@ namespace Oxygen
         #endif
 
         // toolbar style
-        std::string toolbarTextPosition( _kdeGlobals.getOption( "[Toolbar style]", "ToolButtonStyle" ).toVariant<std::string>( "TextBelowIcon" ) );
-        if( toolbarTextPosition == "TextOnly" ) _rc.addToHeaderSection( Gtk::RCOption<std::string>( "gtk-toolbar-style", "GTK_TOOLBAR_TEXT" ) );
-        else if( toolbarTextPosition == "TextBesideIcon" ) _rc.addToHeaderSection( Gtk::RCOption<std::string>( "gtk-toolbar-style", "GTK_TOOLBAR_BOTH_HORIZ" ) );
-        else if( toolbarTextPosition == "NoText" ) _rc.addToHeaderSection( Gtk::RCOption<std::string>( "gtk-toolbar-style", "GTK_TOOLBAR_ICONS" ) );
-        else _rc.addToHeaderSection( Gtk::RCOption<std::string>( "gtk-toolbar-style", "GTK_TOOLBAR_BOTH" ) );
+        const std::string toolbarTextPosition( _kdeGlobals.getOption( "[Toolbar style]", "ToolButtonStyle" ).toVariant<std::string>( "TextBelowIcon" ) );
+        GtkToolbarStyle toolbarStyle( GTK_TOOLBAR_BOTH );
+        if( toolbarTextPosition == "TextOnly" ) toolbarStyle = GTK_TOOLBAR_TEXT;
+        else if( toolbarTextPosition == "TextBesideIcon" ) toolbarStyle = GTK_TOOLBAR_BOTH_HORIZ;
+        else if( toolbarTextPosition == "NoText" ) toolbarStyle = GTK_TOOLBAR_ICONS;
+
+        GtkSettings* settings( gtk_settings_get_default() );
+        gtk_settings_set_long_property( settings, "gtk-toolbar-style", toolbarStyle, "oxygen-gtk" );
+
+        // icons on buttons
+        if( _kdeGlobals.getValue( "[KDE]", "ShowIconsOnPushButtons", "true" ) == "false" )
+        { gtk_settings_set_long_property( settings, "gtk-button-images", 0, "oxygen-gtk" ); }
+
+        // active icon effects
+        _useIconEffect = _kdeGlobals.getOption( "[MainToolbarIcons]", "ActiveEffect" ).toVariant<std::string>( "gamma" ) != "none";
 
         // start drag time and distance
         _startDragDist = _kdeGlobals.getOption( "[KDE]", "StartDragDist" ).toVariant<int>( 4 );
@@ -800,7 +807,8 @@ namespace Oxygen
 
         // mnemonics
         const bool showMnemonics( _oxygen.getOption( "[Style]", "ShowMnemonics" ).toVariant<std::string>("true") == "true" );
-        _rc.addToHeaderSection( Gtk::RCOption<int>( "gtk-auto-mnemonics", !showMnemonics ) );
+        GtkSettings* settings( gtk_settings_get_default() );
+        gtk_settings_set_long_property( settings, "gtk-enable-mnemonics", showMnemonics, "oxygen-gtk" );
 
         // window decoration button size
         std::string buttonSize( _oxygen.getValue( "[Windeco]", "ButtonSize", "Normal") );

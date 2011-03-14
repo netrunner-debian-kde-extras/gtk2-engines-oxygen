@@ -100,6 +100,12 @@ namespace Oxygen
     void cairo_rounded_rectangle_negative( cairo_t* context, double x, double y, double w, double h, double r, Corners corners )
     {
 
+        if( corners == CornersNone )
+        {
+            cairo_rectangle_negative( context, x, y, w, h );
+            return;
+        }
+
         if( corners & CornersTopRight )
         {
             cairo_move_to( context, x+w, y+r );
@@ -124,6 +130,18 @@ namespace Oxygen
             cairo_arc_negative( context, x+w-r, y+h-r, r, M_PI/2, 0 );
         } else cairo_line_to( context, x+w, y+h );
 
+        cairo_close_path( context );
+
+    }
+
+    //__________________________________________________________________
+    void cairo_rectangle_negative( cairo_t* context, double x, double y, double w, double h )
+    {
+
+        cairo_move_to( context, x+w, y );
+        cairo_line_to( context, x, y );
+        cairo_line_to( context, x, y+h );
+        cairo_line_to( context, x+w, y+h );
         cairo_close_path( context );
 
     }
@@ -263,9 +281,9 @@ namespace Oxygen
         assert( data );
 
         int t;
-        #define INTENSITY(r, g, b) ((r) * 0.30 + (g) * 0.59 + (b) * 0.11)
+        #define INTENSITY(r, g, b) ((unsigned char)((r) * 0.30 + (g) * 0.59 + (b) * 0.11))
         #define CLAMP_UCHAR(v) (t = (v), CLAMP (t, 0, 255))
-        #define SATURATE(v) ((1.0 - saturation) * intensity + saturation * (v))
+        #define SATURATE(v) int(((1.0 - saturation) * intensity + saturation * (v)))
 
         unsigned char* line(data);
         unsigned char* pixel(data);

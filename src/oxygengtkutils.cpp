@@ -42,10 +42,11 @@ namespace Oxygen
         {
             int x,y;
             GtkWidget* button=GTK_WIDGET(container);
+            GtkAllocation allocation( gtk_widget_get_allocation( button ) );
             gtk_widget_get_pointer(button,&x,&y);
             if( !(x>0 && y>0 &&
-                    x < button->allocation.width &&
-                    y < button->allocation.height) && gtk_widget_get_state(button)==GTK_STATE_ACTIVE )
+                x < allocation.width &&
+                y < allocation.height) && gtk_widget_get_state(button)==GTK_STATE_ACTIVE )
             { gtk_widget_set_state(button,GTK_STATE_NORMAL); }
 
             gtk_button_set_relief(GTK_BUTTON(button),GTK_RELIEF_NORMAL);
@@ -79,10 +80,13 @@ namespace Oxygen
         { if( g_object_is_a( G_OBJECT( widget ), names[i] ) || name.find( names[i] ) == 0  ) return true; }
 
         // also check parent
-        if( !widget->parent ) return false;
-        name = G_OBJECT_TYPE_NAME( widget->parent );
-        for( unsigned int i = 0; names[i]; ++i )
-        { if( g_object_is_a( G_OBJECT( widget->parent ), names[i] ) || name.find( names[i] ) == 0 ) return true; }
+        if( GtkWidget* parent = gtk_widget_get_parent( widget ) )
+        {
+            name = G_OBJECT_TYPE_NAME( parent );
+            for( unsigned int i = 0; names[i]; ++i )
+            { if( g_object_is_a( G_OBJECT( parent ), names[i] ) || name.find( names[i] ) == 0 ) return true; }
+
+        }
 
         return false;
 
@@ -112,13 +116,7 @@ namespace Oxygen
 
         if( !widget ) return false;
         if( !gdk_default_screen_is_composited() ) return false;
-
-        GdkVisual *visual( gtk_widget_get_visual (widget) );
-        return
-            visual->depth == 32 &&
-            visual->red_mask   == 0xff0000 &&
-            visual->green_mask == 0x00ff00 &&
-            visual->blue_mask  == 0x0000ff;
+        return gdk_visual_has_rgba( gtk_widget_get_visual (widget) );
 
     }
 
@@ -157,8 +155,13 @@ namespace Oxygen
         if( !window ) return false;
 
         if( !gdk_default_screen_is_composited() ) return false;
+        return gdk_visual_has_rgba( gdk_drawable_get_visual( GDK_DRAWABLE( window ) ) );
 
-        GdkVisual *visual( gdk_drawable_get_visual( GDK_DRAWABLE( window ) ) );
+    }
+
+    //________________________________________________________
+    bool Gtk::gdk_visual_has_rgba( GdkVisual* visual )
+    {
         return
             visual->depth == 32 &&
             visual->red_mask   == 0xff0000 &&
@@ -182,111 +185,11 @@ namespace Oxygen
     }
 
     //________________________________________________________
-    GtkWidget* Gtk::gtk_parent_button( GtkWidget* widget )
+    GtkWidget* Gtk::gtk_widget_find_parent( GtkWidget* widget, GType type )
     {
 
-        GtkWidget *parent( widget );
-        while( parent && (parent = gtk_widget_get_parent( parent ) ) )
-        { if( GTK_IS_BUTTON( parent ) ) return parent; }
-
-        return 0L;
-    }
-
-    //________________________________________________________
-    GtkWidget* Gtk::gtk_parent_menubar( GtkWidget* widget )
-    {
-
-        GtkWidget *parent( widget );
-        while( parent && (parent = gtk_widget_get_parent( parent ) ) )
-        { if( GTK_IS_MENU_BAR( parent ) ) return parent; }
-
-        return 0L;
-    }
-
-    //________________________________________________________
-    GtkWidget* Gtk::gtk_parent_menu( GtkWidget* widget )
-    {
-
-        GtkWidget *parent( widget );
-        while( parent && (parent = gtk_widget_get_parent( parent ) ) )
-        { if( GTK_IS_MENU( parent ) ) return parent; }
-
-        return 0L;
-    }
-
-    //________________________________________________________
-    GtkWidget* Gtk::gtk_parent_tree_view( GtkWidget* widget )
-    {
-
-        GtkWidget *parent( widget );
-        while( parent && (parent = gtk_widget_get_parent( parent ) ) )
-        { if( GTK_IS_TREE_VIEW( parent ) ) return parent; }
-
-        return 0L;
-    }
-
-    //________________________________________________________
-    GtkWidget* Gtk::gtk_parent_combo( GtkWidget* widget )
-    {
-
-        GtkWidget *parent( widget );
-        while( parent && (parent = gtk_widget_get_parent( parent ) ) )
-        { if( GTK_IS_COMBO( parent ) ) return parent; }
-
-        return 0L;
-    }
-
-    //________________________________________________________
-    GtkWidget* Gtk::gtk_parent_combobox( GtkWidget* widget )
-    {
-
-        GtkWidget *parent( widget );
-        while( parent && (parent = gtk_widget_get_parent( parent ) ) )
-        { if( GTK_IS_COMBO_BOX( parent ) ) return parent; }
-
-        return 0L;
-    }
-
-    //________________________________________________________
-    GtkWidget* Gtk::gtk_parent_combobox_entry( GtkWidget* widget )
-    {
-
-        GtkWidget *parent( widget );
-        while( parent && (parent = gtk_widget_get_parent( parent ) ) )
-        { if( GTK_IS_COMBO_BOX_ENTRY( parent ) ) return parent; }
-
-        return 0L;
-    }
-
-    //________________________________________________________
-    GtkWidget* Gtk::gtk_parent_scrolled_window( GtkWidget* widget )
-    {
-
-        GtkWidget *parent( widget );
-        while( parent && (parent = gtk_widget_get_parent( parent ) ) )
-        { if( GTK_IS_SCROLLED_WINDOW( parent ) ) return parent; }
-
-        return 0L;
-    }
-
-    //________________________________________________________
-    GtkWidget* Gtk::gtk_parent_statusbar( GtkWidget* widget )
-    {
-
-        GtkWidget *parent( widget );
-        while( parent && (parent = gtk_widget_get_parent( parent ) ) )
-        { if( GTK_IS_STATUSBAR( parent ) ) return parent; }
-
-        return 0L;
-    }
-
-    //________________________________________________________
-    GtkWidget* Gtk::gtk_parent_notebook( GtkWidget* widget )
-    {
-
-        GtkWidget *parent( widget );
-        while( parent && (parent = gtk_widget_get_parent( parent ) ) )
-        { if( GTK_IS_NOTEBOOK( parent ) ) return parent; }
+        for( GtkWidget* parent = widget; parent; parent = gtk_widget_get_parent( parent ) )
+        { if( G_TYPE_CHECK_INSTANCE_TYPE( parent, type ) ) return parent; }
 
         return 0L;
     }
@@ -295,8 +198,7 @@ namespace Oxygen
     bool Gtk::gtk_widget_is_parent( GtkWidget* widget, GtkWidget* potentialParent )
     {
 
-        GtkWidget *parent( widget );
-        while( parent && (parent = gtk_widget_get_parent( parent ) ) )
+        for( GtkWidget* parent = gtk_widget_get_parent( widget ); parent; parent = gtk_widget_get_parent( parent ) )
         { if( potentialParent==parent ) return true; }
 
         return false;
@@ -305,8 +207,7 @@ namespace Oxygen
     //________________________________________________________
     bool Gtk::gtk_parent_is_shadow_in( GtkWidget* widget )
     {
-        GtkWidget *parent( widget );
-        while( parent && (parent = gtk_widget_get_parent( parent ) ) )
+        for( GtkWidget* parent = gtk_widget_get_parent( widget ); parent; parent = gtk_widget_get_parent( parent ) )
         {
             if( GTK_IS_FRAME( parent ) && gtk_frame_get_shadow_type( GTK_FRAME( parent ) ) == GTK_SHADOW_IN ) return true;
             if( GTK_IS_SCROLLED_WINDOW( parent ) && gtk_scrolled_window_get_shadow_type( GTK_SCROLLED_WINDOW( parent ) ) == GTK_SHADOW_IN ) return true;
@@ -325,7 +226,7 @@ namespace Oxygen
     //________________________________________________________
     bool Gtk::gtk_button_is_in_path_bar( GtkWidget* widget )
     {
-        if( !GTK_IS_BUTTON( widget ) ) return false;
+        if( !( GTK_IS_BUTTON( widget ) && gtk_widget_get_parent( widget ) ) ) return false;
 
         std::string name(G_OBJECT_TYPE_NAME( gtk_widget_get_parent( widget ) ) );
         return name == "GtkPathBar" || name == "NautilusPathBar";
@@ -497,7 +398,7 @@ namespace Oxygen
         GtkWidget* tabLabel( gtk_notebook_get_tab_label( notebook, page ) );
 
         // get allocted size and compare to position
-        const GtkAllocation& allocation( tabLabel->allocation );
+        const GtkAllocation allocation( gtk_widget_get_allocation( tabLabel ) );
         return Gtk::gdk_rectangle_contains( &allocation, x, y );
 
     }
@@ -524,7 +425,7 @@ namespace Oxygen
             if(!tabLabel) continue;
 
             // get allocted size and compare to position
-            const GtkAllocation& allocation( tabLabel->allocation );
+            const GtkAllocation allocation( gtk_widget_get_allocation( tabLabel ) );
 
             // get manhattan length
             const int distance = int(
@@ -616,7 +517,7 @@ namespace Oxygen
         }
 
         // removes page allocated size from rect, based on tabwidget orientation
-        const GtkAllocation& pageAllocation( page->allocation );
+        const GtkAllocation pageAllocation( gtk_widget_get_allocation( page ) );
         switch( gtk_notebook_get_tab_pos( notebook ) )
         {
             case GTK_POS_BOTTOM:
@@ -667,14 +568,6 @@ namespace Oxygen
 
         return false;
 
-    }
-
-
-    //____________________________________________________________
-    int Gtk::gtk_notebook_get_current_tab(GtkNotebook* notebook)
-    {
-        if( notebook && notebook->children && notebook->cur_page ) return g_list_index( notebook->children, notebook->cur_page );
-        else return -1;
     }
 
     //____________________________________________________________
@@ -735,26 +628,6 @@ namespace Oxygen
             } else return false;
 
         } else return false;
-
-    }
-
-    //________________________________________________________
-    bool Gtk::gtk_progress_bar_is_horizontal( GtkWidget* widget )
-    {
-
-        if( !GTK_IS_PROGRESS_BAR( widget ) ) return true;
-
-        switch( gtk_progress_bar_get_orientation( GTK_PROGRESS_BAR( widget ) ) )
-        {
-            default:
-            case GTK_PROGRESS_LEFT_TO_RIGHT:
-            case GTK_PROGRESS_RIGHT_TO_LEFT:
-            return true;
-
-            case GTK_PROGRESS_BOTTOM_TO_TOP:
-            case GTK_PROGRESS_TOP_TO_BOTTOM:
-            return false;
-        }
 
     }
 
@@ -963,5 +836,42 @@ namespace Oxygen
         }
 
     }
+
+    //___________________________________________________________
+    GtkWidget* Gtk::gtk_dialog_find_button(GtkDialog* dialog,gint response_id)
+    {
+
+        // get children of dialog's action area
+        GList* children( gtk_container_get_children( GTK_CONTAINER( gtk_dialog_get_action_area( dialog ) ) ) );
+
+        #if OXYGEN_DEBUG
+        std::cerr << "Oxygen::Gtk::gtk_dialog_find_button - butons: ";
+        #endif
+
+        for( GList *child = g_list_first( children ); child; child = g_list_next( child ) )
+        {
+
+            // check data
+            if( !GTK_IS_WIDGET( child->data ) ) continue;
+            GtkWidget* childWidget( GTK_WIDGET( child->data ) );
+
+            const gint id( gtk_dialog_get_response_for_widget(dialog, childWidget ) );
+
+            #if OXYGEN_DEBUG
+            std::cerr << Gtk::TypeNames::response( (GtkResponseType) id ) << ", ";
+            #endif
+            if( id == response_id ) return childWidget;
+
+        }
+
+        #if OXYGEN_DEBUG
+        std::cerr << std::endl;
+        #endif
+
+        if( children ) g_list_free( children );
+        return 0L;
+
+    }
+
 
 }

@@ -66,6 +66,20 @@ namespace Oxygen
         //! set all buttons in the container to state NORMAL
         void gtk_container_adjust_buttons_state( GtkContainer*, gpointer=0L );
 
+        //! returns widget allocation
+        inline GtkAllocation gtk_widget_get_allocation( GtkWidget* widget )
+        {
+            #if GTK_CHECK_VERSION(2, 18, 0)
+            GtkAllocation allocation = { 0, 0, -1, -1 };
+            ::gtk_widget_get_allocation( widget, &allocation );
+            return allocation;
+            #else
+            assert( widget );
+            return widget->allocation;
+            #endif
+
+        }
+
         //! returns true if is an Gnome applet
         bool gtk_widget_is_applet( GtkWidget* );
 
@@ -80,6 +94,9 @@ namespace Oxygen
 
         //! returns true if window supports rgba
         bool gdk_window_has_rgba( GdkWindow* );
+
+        //! true if visual supports rgba
+        bool gdk_visual_has_rgba( GdkVisual* );
 
         //! returns true if window is a base window
         bool gdk_window_is_base( GdkWindow* );
@@ -100,35 +117,48 @@ namespace Oxygen
         //!@name check parent type
         //@{
 
+        //! return parent of given type if any
+        GtkWidget* gtk_widget_find_parent( GtkWidget*, GType );
+
         //! return parent button if any.
-        GtkWidget* gtk_parent_button( GtkWidget* );
+        inline GtkWidget* gtk_parent_button( GtkWidget* widget )
+        { return gtk_widget_find_parent( widget, GTK_TYPE_BUTTON ); }
 
         //! return parent menu if any
-        GtkWidget* gtk_parent_menubar( GtkWidget* );
+        inline GtkWidget* gtk_parent_menubar( GtkWidget* widget )
+        { return gtk_widget_find_parent( widget, GTK_TYPE_MENU_BAR ); }
 
         //! return parent menu if any
-        GtkWidget* gtk_parent_menu( GtkWidget* );
+        inline GtkWidget* gtk_parent_menu( GtkWidget* widget )
+        { return gtk_widget_find_parent( widget, GTK_TYPE_MENU ); }
 
         //! return parent treeview if any.
-        GtkWidget* gtk_parent_tree_view( GtkWidget* );
+        inline GtkWidget* gtk_parent_tree_view( GtkWidget* widget )
+        { return gtk_widget_find_parent( widget, GTK_TYPE_TREE_VIEW ); }
 
         //! return parent combobox if any.
-        GtkWidget* gtk_parent_combo( GtkWidget* );
+        inline GtkWidget* gtk_parent_combo( GtkWidget* widget )
+        { return gtk_widget_find_parent( widget, GTK_TYPE_COMBO ); }
 
         //! return parent combobox if any.
-        GtkWidget* gtk_parent_combobox( GtkWidget* );
+        inline GtkWidget* gtk_parent_combobox( GtkWidget* widget )
+        { return gtk_widget_find_parent( widget, GTK_TYPE_COMBO_BOX ); }
 
         //! return parent combobox if any.
-        GtkWidget* gtk_parent_combobox_entry( GtkWidget* );
+        inline GtkWidget* gtk_parent_combobox_entry( GtkWidget* widget )
+        { return gtk_widget_find_parent( widget, GTK_TYPE_COMBO_BOX_ENTRY ); }
 
         //! return parent scrolled window if any.
-        GtkWidget* gtk_parent_scrolled_window( GtkWidget* );
+        inline GtkWidget* gtk_parent_scrolled_window( GtkWidget* widget )
+        { return gtk_widget_find_parent( widget, GTK_TYPE_SCROLLED_WINDOW ); }
 
         //! return parent statusbar if any.
-        GtkWidget* gtk_parent_statusbar( GtkWidget* );
+        inline GtkWidget* gtk_parent_statusbar( GtkWidget* widget )
+        { return gtk_widget_find_parent( widget, GTK_TYPE_STATUSBAR ); }
 
         //! return parent combobox if any.
-        GtkWidget* gtk_parent_notebook( GtkWidget* );
+        inline GtkWidget* gtk_parent_notebook( GtkWidget* widget )
+        { return gtk_widget_find_parent( widget, GTK_TYPE_NOTEBOOK ); }
 
         //! returns true if potentialParent is (maybe indirect) parent of widget
         bool gtk_widget_is_parent( GtkWidget*, GtkWidget* potentialParent );
@@ -138,9 +168,20 @@ namespace Oxygen
 
         //@}
 
-        //! true if a progressbar is horizontal
-        /*! adapted from QtCurve code */
-        bool gtk_progress_bar_is_horizontal( GtkWidget* );
+        //! true if a widget (orientable) is horizontal
+        inline bool gtk_widget_is_horizontal( GtkWidget* widget )
+        {
+            if( !GTK_IS_ORIENTABLE( widget ) ) return true;
+            return gtk_orientable_get_orientation( GTK_ORIENTABLE( widget ) ) == GTK_ORIENTATION_HORIZONTAL;
+        }
+
+
+        //! true if a widget (orientable) is vertical
+        inline bool gtk_widget_is_vertical( GtkWidget* widget )
+        {
+            if( !GTK_IS_ORIENTABLE( widget ) ) return false;
+            return gtk_orientable_get_orientation( GTK_ORIENTABLE( widget ) ) == GTK_ORIENTATION_VERTICAL;
+        }
 
         //! true if scrolled window must be forced to have a sunken frame
         bool gtk_scrolled_window_force_sunken( GtkWidget* );
@@ -211,9 +252,6 @@ namespace Oxygen
         /*! arrows are dimmed visible if at least one of the child tab_labels is unmapped */
         bool gtk_notebook_has_visible_arrows( GtkNotebook* );
 
-        //! index of current page
-        int gtk_notebook_get_current_tab( GtkNotebook* );
-
         // make all the buttons on the tabs normal
         bool gtk_notebook_update_close_buttons( GtkNotebook*);
 
@@ -262,10 +300,10 @@ namespace Oxygen
         GdkPixbuf* gdk_pixbuf_set_alpha( const GdkPixbuf*, double );
 
         //! changes the gamma value of an image
-        bool gdk_pixbuf_to_gamma( GdkPixbuf* pixbuf, double value );
+        bool gdk_pixbuf_to_gamma( GdkPixbuf*, double );
 
         //! resize pixbuf
-        GdkPixbuf* gdk_pixbuf_resize( GdkPixbuf* src, int width, int height );
+        GdkPixbuf* gdk_pixbuf_resize( GdkPixbuf*, int width, int height );
 
         //! returns initialized GdkRectangle
         inline GdkRectangle gdk_rectangle( int x = 0, int y = 0, int w = -1, int h = -1 )
@@ -287,10 +325,10 @@ namespace Oxygen
                 ( rect->y <= y && (rect->y + rect->height) > y );
         }
 
-        //! gtk error handler, do nothing
-        inline void oxygen_log_handler( const gchar*, GLogLevelFlags, const gchar*, gpointer )
-        {}
         //@}
+
+        //! returns a widget which has response_id as response id for dialog
+        GtkWidget* gtk_dialog_find_button( GtkDialog*, gint );
 
     }
 
