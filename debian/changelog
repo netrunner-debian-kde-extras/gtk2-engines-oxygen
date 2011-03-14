@@ -1,6 +1,8 @@
 gtk2-engines-oxygen (1.0.3-1) UNRELEASED; urgency=low
 
   * New upstream version.
+    - debian/patches/LP719078_fix_assert_failure.patch: Dropped, was taken
+      from upstream.
   * debian/rules: Added "--parallel" to dh_auto_configure invocation.
   * debian/watch: Added "git-import-orig" as a command.
 
