@@ -1,4 +1,4 @@
-gtk2-engines-oxygen (1.0.3-1) UNRELEASED; urgency=low
+gtk2-engines-oxygen (1.0.3-1) unstable; urgency=low
 
   * New upstream version.
     - debian/patches/LP719078_fix_assert_failure.patch: Dropped, was taken
@@ -6,7 +6,7 @@ gtk2-engines-oxygen (1.0.3-1) UNRELEASED; urgency=low
   * debian/rules: Added "--parallel" to dh_auto_configure invocation.
   * debian/watch: Added "git-import-orig" as a command.
 
- -- Kai Wasserbäch <curan@debian.org>  Fri, 25 Feb 2011 11:37:51 +0100
+ -- Kai Wasserbäch <curan@debian.org>  Mon, 14 Mar 2011 18:03:50 +0100
 
 gtk2-engines-oxygen (1.0.2-2) unstable; urgency=low
 
