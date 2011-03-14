@@ -1,6 +1,7 @@
 gtk2-engines-oxygen (1.0.2-3) UNRELEASED; urgency=low
 
   * debian/rules: Added "--parallel" to dh_auto_configure invocation.
+  * debian/watch: Added "git-import-orig" as a command.
 
  -- Kai Wasserbäch <curan@debian.org>  Fri, 25 Feb 2011 11:37:51 +0100
 

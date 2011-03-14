@@ -1,4 +1,5 @@
 version=3
 
 opts=pasv \
-  ftp://ftp.kde.org/pub/kde/stable/oxygen-gtk/([\d\.]+)/src/oxygen-gtk-([\d\.]+)\.tar\.bz2
+  ftp://ftp.kde.org/pub/kde/stable/oxygen-gtk/([\d\.]+)/src/oxygen-gtk-([\d\.]+)\.tar\.bz2 \
+  debian git-import-orig
