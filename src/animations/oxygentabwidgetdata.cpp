@@ -77,7 +77,7 @@ namespace Oxygen
 
         // get pointer position
         int xPointer,yPointer;
-        gdk_window_get_pointer(widget->window,&xPointer,&yPointer,NULL);
+        gdk_window_get_pointer( gtk_widget_get_window( widget ), &xPointer, &yPointer, 0L );
 
         // loop over tabs and check matching
         for( unsigned int i = (unsigned int)Gtk::gtk_notebook_find_first_tab( widget ); i < _tabRects.size(); i++ )
@@ -192,6 +192,9 @@ namespace Oxygen
     //________________________________________________________________________________
     void TabWidgetData::registerChild( GtkWidget* widget )
     {
+
+        // do nothing if child is invalid (might happen: not checked at calling stage)
+        if( !widget ) return;
 
         // make sure widget is not already in map
         if( _childrenData.find( widget ) == _childrenData.end() )

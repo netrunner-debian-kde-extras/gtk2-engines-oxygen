@@ -68,6 +68,10 @@ namespace Oxygen
         //!@name oxygen style options
         //@{
 
+        //! use effect to render active (mouse-over) icons
+        bool useIconEffect( void ) const
+        { return _useIconEffect; }
+
         //! checkbox style
         enum CheckBoxStyle
         {
@@ -221,9 +225,6 @@ namespace Oxygen
 
         protected:
 
-        // get home directory
-        std::string home( void ) const;
-
         //! icon path
         PathList kdeConfigPathList( void ) const;
 
@@ -237,7 +238,8 @@ namespace Oxygen
         void initUserConfigDir( void );
 
         //! init application name
-        void initApplicationName( void );
+        void initApplicationName( void )
+        { _applicationName.initialize(); }
 
         //! init argb support
         void initArgb( void );
@@ -315,6 +317,9 @@ namespace Oxygen
 
         //! if true, inactive selection has different color from active
         bool _inactiveChangeSelectionColor;
+
+        //! active icon effect
+        bool _useIconEffect;
 
         //! checkbox style
         CheckBoxStyle _checkBoxStyle;

@@ -26,7 +26,7 @@
 #include "oxygentileset.h"
 #include "oxygentilesetcache.h"
 
-#include <gdk/gdk.h>
+#include <gtk/gtk.h>
 
 namespace Oxygen
 {
@@ -43,11 +43,7 @@ namespace Oxygen
         public:
 
         //! constructor
-        StyleHelper( void ):
-            // for now we use a Cairo_image_surface for reference.
-            // will try using a cairo_x11_surface later
-            _refSurface( cairo_image_surface_create( CAIRO_FORMAT_ARGB32, 1, 1 ) )
-        {}
+        StyleHelper( void );
 
         //! destructor
         virtual ~StyleHelper( void )
@@ -86,10 +82,6 @@ namespace Oxygen
             if( w <= 0 || h <= 0 ) return 0L;
             else return cairo_surface_create_similar( _refSurface, CAIRO_CONTENT_COLOR_ALPHA, w, h );
         }
-
-        //! access reference surface
-        const Cairo::Surface& refSurface( void ) const
-        { return _refSurface; }
 
         //!@name decoration specific helper functions
         //@{
@@ -155,7 +147,13 @@ namespace Oxygen
         //! dots
         void renderDot( Cairo::Context&, const ColorUtils::Rgba&, int x, int y ) const;
 
+        //@}
+
         protected:
+
+        //! access reference surface
+        const Cairo::Surface& refSurface( void ) const
+        { return _refSurface; }
 
         // separator
         const Cairo::Surface& separator(const ColorUtils::Rgba &color, bool vertical, int size );
