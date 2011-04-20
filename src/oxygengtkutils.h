@@ -117,6 +117,9 @@ namespace Oxygen
         //!@name check parent type
         //@{
 
+        //! returns widget path as a string
+        std::string gtk_widget_path( GtkWidget* );
+
         //! return parent of given type if any
         GtkWidget* gtk_widget_find_parent( GtkWidget*, GType );
 
@@ -146,7 +149,21 @@ namespace Oxygen
 
         //! return parent combobox if any.
         inline GtkWidget* gtk_parent_combobox_entry( GtkWidget* widget )
-        { return gtk_widget_find_parent( widget, GTK_TYPE_COMBO_BOX_ENTRY ); }
+        {
+            // try get parent combobox entry
+            GtkWidget* out(0L);
+            if( ( out = gtk_widget_find_parent( widget, GTK_TYPE_COMBO_BOX_ENTRY ) ) ) return out;
+
+            // if not found, get parent combobox and check if it has an entry
+            if( !(out = gtk_widget_find_parent( widget, GTK_TYPE_COMBO_BOX ) ) ) return 0L;
+
+            #if GTK_CHECK_VERSION(2, 24, 0)
+            return gtk_combo_box_get_has_entry( GTK_COMBO_BOX( out ) ) ? out:0L;
+            #else
+            return GTK_IS_ENTRY( gtk_bin_get_child( GTK_BIN( out ) ) ) ? out:0L;
+            #endif
+
+        }
 
         //! return parent scrolled window if any.
         inline GtkWidget* gtk_parent_scrolled_window( GtkWidget* widget )
@@ -272,20 +289,30 @@ namespace Oxygen
                 double(color.blue)/0xffff );
         }
 
-        //! map widget origin to top level
+        //! map window origin to top level
         /*!
         x and y correspond to (0,0) maped to toplevel window;
         w and h correspond to toplevel window frame size
         */
-        bool gdk_map_to_toplevel( GdkWindow*, GtkWidget*, gint*, gint*, gint*, gint*, bool frame = false );
+        bool gdk_window_map_to_toplevel( GdkWindow*, gint*, gint*, gint*, gint*, bool frame = false );
 
         //! map widget origin to top level
         /*!
         x and y correspond to (0,0) maped to toplevel window;
         w and h correspond to toplevel window frame size
         */
+        bool gtk_widget_map_to_toplevel( GtkWidget*, gint*, gint*, gint*, gint*, bool frame = false );
+
+        //! map window/widget origin to top level
+        inline bool gdk_map_to_toplevel( GdkWindow* window, GtkWidget* widget, gint* x, gint* y, gint* w, gint* h, bool frame = false )
+        {
+            if( window && GDK_IS_WINDOW( window ) ) return gdk_window_map_to_toplevel( window, x, y, w, h, frame );
+            else return gtk_widget_map_to_toplevel( widget, x, y, w, h, frame );
+        }
+
+        //! map window origin to top level
         inline bool gdk_map_to_toplevel( GdkWindow* window, gint* x, gint* y, gint* w, gint* h, bool frame = false )
-        { return gdk_map_to_toplevel( window, 0L, x, y, w, h, frame ); }
+        { return gdk_window_map_to_toplevel( window, x, y, w, h, frame ); }
 
         //! get top level windows dimension
         void gdk_toplevel_get_size( GdkWindow*, gint*, gint* );

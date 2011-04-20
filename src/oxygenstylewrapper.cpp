@@ -80,8 +80,17 @@ namespace Oxygen
         if( d.isBase() || d.isEventBox())
         {
 
-            // special case for openoffice
-            // we fill the background with flat color unless it is a toolbar
+            // if background pixmap is provided, fallback to default painting
+            if( style->bg_pixmap[state] )
+            {
+                StyleWrapper::parentClass()->draw_flat_box( style, window, state,
+                    shadow, clipRect, widget, detail,
+                    x, y, w, h );
+
+                return;
+            }
+
+            // for openoffice we fill the background with flat color unless it is a toolbar
             if( Style::instance().settings().applicationName().isOpenOffice() )
             {
                 if( !GTK_IS_TOOLBAR( widget ) )
@@ -312,10 +321,18 @@ namespace Oxygen
                     }
 
                     // check if column is last
-                    if( (options&(Selected|Hover)) && cellInfo.isValid() && cellInfo.isLastVisibleColumn( treeView ) )
+                    if( (options&(Selected|Hover)) && cellInfo.isValid() )
                     {
-                        if( reversed ) forceCellStart = true;
-                        else forceCellEnd = true;
+                        if(cellInfo.isLastVisibleColumn( treeView ))
+                        {
+                            if( reversed ) forceCellStart = true;
+                            else forceCellEnd = true;
+                        }
+                        if(cellInfo.isFirstVisibleColumn( treeView ))
+                        {
+                            if( reversed ) forceCellEnd = true;
+                            else forceCellStart = true;
+                        }
                     }
 
                 }
@@ -337,6 +354,17 @@ namespace Oxygen
 
             }
 
+            return;
+
+
+        } else if( d.isIconViewItem() ) {
+
+            StyleOptions options( widget, state );
+            if( options&(Selected|Hover) )
+            {
+                // adjustments have been tuned empirically
+                Style::instance().renderSelection( window, clipRect, x, y, w, h, TileSet::Full, options );
+            }
             return;
 
         } else if( d.isEntryBg() && !Style::instance().settings().applicationName().isMozilla( widget ) ) {
@@ -669,14 +697,20 @@ namespace Oxygen
                     !Style::instance().settings().applicationName().isGoogleChrome() )
                 { options |= NoFill; }
 
-                options |= Blend;
+                if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
+                { options |= Blend; }
 
                 // focus handling
                 Style::instance().animations().comboBoxEntryEngine().registerWidget( parent );
                 Style::instance().animations().comboBoxEntryEngine().setButton( parent, widget );
 
-                ColorUtils::Rgba background( Gtk::gdk_get_color( style->bg[state] ) );
-                Style::instance().fill( window, clipRect, x, y, w, h, background );
+                // background
+                {
+                    GtkWidget* entry( gtk_bin_get_child( GTK_BIN( parent ) ) );
+                    GtkStyle* style( gtk_widget_get_style( entry ) );
+                    ColorUtils::Rgba background( Gtk::gdk_get_color( style->base[state] ) );
+                    Style::instance().fill( window, clipRect, x, y, w, h, background );
+                }
 
                 // update option accordingly
                 if( state == GTK_STATE_INSENSITIVE ) options &= ~(Hover|Focus);
@@ -729,7 +763,8 @@ namespace Oxygen
                 const bool reversed( Gtk::gtk_widget_layout_is_reversed( widget ) );
 
                 StyleOptions options( widget, state, shadow );
-                options |= Blend;
+                if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
+                    options |= Blend;
 
                 Style::instance().animations().comboBoxEngine().registerWidget( parent );
                 Style::instance().animations().comboBoxEngine().setButton( parent, widget );
@@ -778,7 +813,10 @@ namespace Oxygen
                     Gtk::g_object_is_a( G_OBJECT( widget ), "GtkChromeButton" ) )
                 { gtk_button_set_relief( GTK_BUTTON( widget ), GTK_RELIEF_NONE ); }
 
-                StyleOptions options( Blend );
+                StyleOptions options;
+                if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
+                    options |= Blend;
+
                 options |= StyleOptions( widget, state, shadow );
 
                 if( widget && Gtk::gtk_button_is_flat( widget ) )
@@ -1521,7 +1559,14 @@ namespace Oxygen
             if( !Style::instance().settings().applicationName().isOpenOffice() )
             { Style::instance().renderWindowBackground( window, clipRect, x-4, y-4, w+8, h+8 ); }
 
-            Style::instance().renderSlab(window,clipRect,x-1,y-1,w+2,h+2,NoFill);
+            if( gtk_notebook_get_show_tabs( GTK_NOTEBOOK( widget ) ) )
+            {
+                Style::instance().renderSlab(window,clipRect,x-1,y-1,w+2,h+2,NoFill);
+            }
+            else
+            {
+                gtk_notebook_set_show_border( GTK_NOTEBOOK(widget), FALSE );
+            }
 
         } else if( GTK_IS_CALENDAR( widget ) && shadow == GTK_SHADOW_OUT ) {
 
@@ -1532,7 +1577,9 @@ namespace Oxygen
                 Style::instance().renderWindowBackground( window, widget, clipRect,x+2,y+2,w-4,h-6 );
             }
 
-            StyleOptions options( Blend );
+            StyleOptions options;
+            if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
+                options |= Blend;
             options |= NoFill;
             Style::instance().renderSlab(window,clipRect,x-2,y-2,w+4,h+2, options );
 
@@ -1545,7 +1592,8 @@ namespace Oxygen
             Style::instance().animations().comboBoxEngine().registerChild( parent, widget );
             GtkShadowType shadow( Style::instance().animations().comboBoxEngine().pressed( parent ) ? GTK_SHADOW_IN:GTK_SHADOW_OUT );
             StyleOptions options( widget, state, shadow );
-            options |= Blend;
+            if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
+                options |= Blend;
 
             if( Style::instance().animations().comboBoxEngine().hasFocus( parent ) ) options |= Focus;
             else options &= ~Focus;
@@ -1612,7 +1660,7 @@ namespace Oxygen
             }
 
             // hole
-            Style::instance().renderHole( window, clipRect, x-1, y-1, w+2, h+1, NoFill );
+            Style::instance().renderHole( window, clipRect, x-1, y-1, w+2, h+2, NoFill );
 
         } else if( (shadow == GTK_SHADOW_ETCHED_IN || shadow == GTK_SHADOW_ETCHED_OUT) && !Gtk::gtk_parent_button( widget )) {
 
@@ -1622,7 +1670,9 @@ namespace Oxygen
         } else if( shadow == GTK_SHADOW_OUT ) {
 
             // default shadow_out frame
-            StyleOptions options( Blend );
+            StyleOptions options;
+            if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
+                options |= Blend;
             options |= NoFill;
             Style::instance().renderSlab( window, clipRect, x-1, y-1, w+2, h+2, options );
 
@@ -1665,7 +1715,8 @@ namespace Oxygen
             if( !(d.isCellCheck() || Gtk::gtk_parent_tree_view( widget ) ) )
             {
                 // enable blending
-                options |= Blend;
+                if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
+                    options |= Blend;
             }
 
             if( d.isCellCheck() )
@@ -1731,7 +1782,9 @@ namespace Oxygen
         {
 
             StyleOptions options( widget, state, shadow );
-            if( !Gtk::gtk_parent_tree_view( widget ) ) options |= Blend;
+            if( !Gtk::gtk_parent_tree_view( widget ) &&
+                    !Style::instance().settings().applicationName().useFlatBackground( widget ))
+            { options |= Blend; }
             Style::instance().renderRadioButton( window, clipRect, x, y, w, h, shadow, options );
 
         } else if( d.isOption() || d.isCellRadio() ) {
@@ -1740,7 +1793,8 @@ namespace Oxygen
             StyleOptions options( widget, state, shadow );
             if( !( d.isCellRadio() || Gtk::gtk_parent_tree_view( widget ) ) )
             {
-                options |= Blend;
+                if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
+                    options |= Blend;
                 if( Gtk::gtk_parent_menu( widget ) )
                 {
 
@@ -1850,7 +1904,8 @@ namespace Oxygen
             StyleOptions options;
             if( !Gtk::gtk_parent_tree_view( widget ) )
             {
-                options |= Blend;
+                if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
+                    options |= Blend;
                 if( Gtk::gtk_parent_menu( widget ) ) options |= Menu;
             }
 
@@ -1890,7 +1945,8 @@ namespace Oxygen
             StyleOptions options( Vertical );
             if( !Gtk::gtk_parent_tree_view( widget ) )
             {
-                options |= Blend;
+                if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
+                    options |= Blend;
                 if( Gtk::gtk_parent_menu( widget ) ) options |= Menu;
             }
             Style::instance().drawSeparator( window, clipRect, x+1, y1, 0, y2-y1, options );
@@ -2334,15 +2390,7 @@ namespace Oxygen
 
                     // this trick ensures that tabbar is always redrawn
                     Style::instance().animations().tabWidgetEngine().registerWidget( widget );
-                    if( Style::instance().animations().tabWidgetEngine().isDirty( widget ) )
-                    {
-                        Style::instance().animations().tabWidgetEngine().setDirty( widget, false );
-
-                    } else {
-
-                        Style::instance().animations().tabWidgetEngine().setDirty( widget, true );
-
-                    }
+                    Style::instance().animations().tabWidgetEngine().toggleDirty( widget );
 
                 }
 
@@ -2424,7 +2472,9 @@ namespace Oxygen
         if( d.isScale() )
         {
 
-            StyleOptions options( Blend );
+            StyleOptions options;
+            if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
+                options |= Blend;
             options |= StyleOptions( widget, state, shadow );
             options &= ~Sunken;
             if( GTK_IS_VSCALE( widget ) ) options |= Vertical;
@@ -2531,8 +2581,9 @@ namespace Oxygen
                 // this does not work when the first tab is being grabbed
                 if( dragInProgress )
                 {
-                    drawTabBarBase = ((tabOptions & FirstTab) && !isCurrentTab) ||
-                        ((tabOptions & LastTab) && gtk_notebook_get_current_page( notebook ) == 0 );
+                    int firstTabIndex( Gtk::gtk_notebook_find_first_tab( widget ) );
+                    int focusTabIndex( gtk_notebook_get_current_page( notebook ) );
+                    drawTabBarBase = (tabIndex == firstTabIndex && !isCurrentTab ) || (firstTabIndex == focusTabIndex && tabIndex == firstTabIndex+1 );
                 }
 
             }
@@ -2618,6 +2669,17 @@ namespace Oxygen
             Gtk::TypeNames::state( state ),
             detail );
         #endif
+
+        Gtk::Detail d( detail );
+        if( d.isNull() && GTK_IS_WINDOW( widget ) )
+        {
+
+            // TODO: implement something better
+            StyleWrapper::parentClass()->draw_focus( style, window, state,
+                clipRect, widget, detail,
+                x, y, w, h );
+
+        }
 
     }
 
@@ -2947,30 +3009,28 @@ namespace Oxygen
     //_______________________________________________________________________________________________________________
     void StyleWrapper::registerType( GTypeModule* module )
     {
-        if( !_type )
+
+        #if OXYGEN_DEBUG
+        std::cerr << "Oxygen::StyleWrapper::registerType" << std::endl;
+        #endif
+
+        const GTypeInfo info =
         {
+            (guint16)sizeof( OxygenStyleClass ),
+            (GBaseInitFunc) NULL,
+            (GBaseFinalizeFunc) NULL,
+            (GClassInitFunc) classInit,
+            (GClassFinalizeFunc) NULL,
+            NULL,
+            (guint16)sizeof( OxygenStyle ),
+            0,
+            (GInstanceInitFunc) instanceInit,
+            NULL
+        };
 
-            #if OXYGEN_DEBUG
-            std::cerr << "Oxygen::StyleWrapper::registerType" << std::endl;
-            #endif
+        _typeInfo = info;
+        _type = g_type_module_register_type( module, GTK_TYPE_STYLE, "OxygenStyle", &_typeInfo, GTypeFlags(0 ) );
 
-            const GTypeInfo info =
-            {
-                (guint16)sizeof( OxygenStyleClass ),
-                (GBaseInitFunc) NULL,
-                (GBaseFinalizeFunc) NULL,
-                (GClassInitFunc) classInit,
-                (GClassFinalizeFunc) NULL,
-                NULL,
-                (guint16)sizeof( OxygenStyle ),
-                0,
-                (GInstanceInitFunc) instanceInit,
-                NULL
-            };
-
-            _typeInfo = info;
-            _type = g_type_module_register_type( module, GTK_TYPE_STYLE, "OxygenStyle", &_typeInfo, GTypeFlags(0 ) );
-        }
     }
 
     //_______________________________________________________________________________________________________________
