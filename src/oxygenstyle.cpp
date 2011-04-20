@@ -210,30 +210,7 @@ namespace Oxygen
             // add hole if required (this can be done before translating the context
             if( options&NoFill )
             {
-                // create a rounded-rect antimask for renderHoleBackground
-                GdkRectangle mask = {x+2, y+1, w-4, h-3 };
-                const double maskRadius = 3.5;
-                Corners corners( CornersNone );
-                if( tiles & TileSet::Left )
-                {
-                    mask.x += Entry_SideMargin;
-                    mask.width -= Entry_SideMargin;
-                    if( tiles & TileSet::Top ) corners |= CornersTopLeft;
-                    if( tiles & TileSet::Bottom ) corners |= CornersBottomLeft;
-                }
-
-                if( tiles & TileSet::Right )
-                {
-                    mask.width -= Entry_SideMargin;
-                    if( tiles & TileSet::Top ) corners |= CornersTopRight;
-                    if( tiles & TileSet::Bottom ) corners |= CornersBottomRight;
-                }
-
-                // set clipping mask
-                gdk_cairo_rounded_rectangle_negative(context,&mask,maskRadius,CornersAll);
-                cairo_rectangle(context,x,y,w,h);
-                cairo_clip(context);
-
+                renderHoleMask( context, x, y, w, h, tiles );
             }
 
             // get window dimension and position
@@ -638,7 +615,7 @@ namespace Oxygen
     void Style::renderHoleBackground(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, TileSet::Tiles tiles )
+        gint x, gint y, gint w, gint h, const StyleOptions& options, TileSet::Tiles tiles )
     {
 
         // do nothing if not enough room
@@ -648,7 +625,26 @@ namespace Oxygen
         pass "NoFill" option to renderWindowBackground,
         to indicate one must make a "hole" in the center
         */
-        renderWindowBackground( window, clipRect, x, y, w, h, NoFill, tiles);
+        if( options&Flat )
+        {
+
+            // create a rounded-rect antimask for renderHoleBackground
+            Cairo::Context context( window, clipRect );
+            renderHoleMask( context, x, y, w, h, tiles );
+            cairo_set_source( context, settings().palette().color( Palette::Window ) );
+            cairo_rectangle( context, x, y, w, h );
+            cairo_fill( context );
+
+        } else {
+
+            /*
+            normal window background.
+            pass the NoFill option, to ask for a mask
+            */
+            renderWindowBackground( window, clipRect, x, y, w, h, NoFill, tiles);
+
+        }
+
     }
 
     //__________________________________________________________________
@@ -794,6 +790,37 @@ namespace Oxygen
         // context
         Cairo::Context context( window, clipRect );
         renderScrollBarHole( context, x, y, w, h, base, options&Vertical );
+
+    }
+
+    //____________________________________________________________________________________
+    void Style::renderHoleMask( cairo_t* context, int x, int y, int w, int h, TileSet::Tiles tiles )
+    {
+
+        GdkRectangle mask = {x+2, y+1, w-4, h-3 };
+        const double maskRadius = 3.5;
+        Corners corners( CornersNone );
+        if( tiles & TileSet::Left )
+        {
+            mask.x += Entry_SideMargin;
+            mask.width -= Entry_SideMargin;
+            if( tiles & TileSet::Top ) corners |= CornersTopLeft;
+            if( tiles & TileSet::Bottom ) corners |= CornersBottomLeft;
+        }
+
+        if( tiles & TileSet::Right )
+        {
+            mask.width -= Entry_SideMargin;
+            if( tiles & TileSet::Top ) corners |= CornersTopRight;
+            if( tiles & TileSet::Bottom ) corners |= CornersBottomRight;
+        }
+
+        // set clipping mask
+        gdk_cairo_rounded_rectangle_negative(context,&mask,maskRadius,CornersAll);
+        cairo_rectangle(context,x,y,w,h);
+        cairo_clip(context);
+
+        return;
 
     }
 
@@ -1789,6 +1816,23 @@ namespace Oxygen
         if( options&Disabled ) base = settings().palette().color( Palette::Disabled, role );
         else if( options&Hover ) base = settings().palette().color( Palette::Hover );
         else base = settings().palette().color( Palette::Active, role );
+
+        // merge base color with relevant background, if needed
+        const Palette::Group group( (options&Disabled) ? Palette::Disabled : Palette::Active );
+        switch( role )
+        {
+
+            case Palette::WindowText:
+            base = ColorUtils::decoColor( settings().palette().color( group, Palette::Window ), base );
+            break;
+
+            case Palette::ButtonText:
+            base = ColorUtils::decoColor( settings().palette().color( group, Palette::Button ), base );
+            break;
+
+            default: break;
+
+        }
 
         // need odd width and height
         if( !(w%2) ) w--;
