@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: Debian KDE Extras Team <pkg-kde-extras@lists.alioth.debian.org>
 Uploaders: Fathi Boudra <fabo@debian.org>, Kai Wasserbäch <curan@debian.org>
 Build-Depends: debhelper (>= 8), cmake, libgtk2.0-dev
-Standards-Version: 3.9.1
+Standards-Version: 3.9.2
 Homepage: https://projects.kde.org/projects/playground/artwork/oxygen-gtk
 Vcs-Git: git://git.debian.org/pkg-kde/kde-extras/gtk2-engines-oxygen.git
 Vcs-Browser: http://git.debian.org/?p=pkg-kde/kde-extras/gtk2-engines-oxygen.git;a=summary
