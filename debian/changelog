@@ -3,6 +3,7 @@ gtk2-engines-oxygen (1.0.4-2) UNRELEASED; urgency=low
   * debian/gbp.conf: Make signed tags the default behaviour.
   * debian/control: Bumped Standards-Version to 3.9.2, no further changes
     required.
+  * debian/copyright: Added myself to the "Debian packaging" section.
 
  -- Kai Wasserbäch <curan@debian.org>  Wed, 04 May 2011 13:24:15 +0200
 
