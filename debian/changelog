@@ -1,3 +1,9 @@
+gtk2-engines-oxygen (1.0.4-2) UNRELEASED; urgency=low
+
+  * debian/gbp.conf: Make signed tags the default behaviour.
+
+ -- Kai Wasserbäch <curan@debian.org>  Wed, 04 May 2011 13:24:15 +0200
+
 gtk2-engines-oxygen (1.0.4-1) unstable; urgency=low
 
   * New upstream version. (Closes: #623442)
