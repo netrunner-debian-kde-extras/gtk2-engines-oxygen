@@ -1,11 +1,12 @@
-gtk2-engines-oxygen (1.0.4-2) UNRELEASED; urgency=low
+gtk2-engines-oxygen (1.0.5-1) unstable; urgency=low
 
+  * New upstream version.
   * debian/gbp.conf: Make signed tags the default behaviour.
   * debian/control: Bumped Standards-Version to 3.9.2, no further changes
     required.
   * debian/copyright: Added myself to the "Debian packaging" section.
 
- -- Kai Wasserbäch <curan@debian.org>  Wed, 04 May 2011 13:24:15 +0200
+ -- Kai Wasserbäch <curan@debian.org>  Fri, 20 May 2011 10:13:26 +0200
 
 gtk2-engines-oxygen (1.0.4-1) unstable; urgency=low
 
