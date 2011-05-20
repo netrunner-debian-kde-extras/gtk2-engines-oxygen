@@ -66,11 +66,15 @@ namespace Oxygen
     {
         if( !widget ) return false;
 
+        #if OXYGEN_DEBUG
+        std::cerr << "Gtk::gtk_widget_is_applet(): " << Gtk::gtk_widget_path(widget) << std::endl;
+        #endif
 
         static const char* names[] =
         {
             "PanelWidget",
             "PanelApplet",
+            "XfcePanelWindow",
             0
         };
 
@@ -86,6 +90,16 @@ namespace Oxygen
             for( unsigned int i = 0; names[i]; ++i )
             { if( g_object_is_a( G_OBJECT( parent ), names[i] ) || name.find( names[i] ) == 0 ) return true; }
 
+        }
+
+        // also check first widget path element (needed for xfce panel)
+        std::string widgetPath=Gtk::gtk_widget_path(widget);
+        {
+            for( unsigned int i = 0; names[i]; ++i )
+            {
+                if( widgetPath.find(names[i]) != std::string::npos )
+                    return true;
+            }
         }
 
         return false;
@@ -237,6 +251,13 @@ namespace Oxygen
     {
         if( !GTK_IS_BUTTON( widget ) ) return false;
         return ( gtk_button_get_relief( GTK_BUTTON( widget ) ) == GTK_RELIEF_NONE );
+    }
+
+    //________________________________________________________
+    bool Gtk::gtk_button_is_header( GtkWidget* widget )
+    {
+        if( !GTK_IS_BUTTON( widget ) ) return false;
+        return gtk_parent_tree_view( widget ) || gtk_widget_find_parent( widget, "GimpThumbBox" );
     }
 
     //________________________________________________________
