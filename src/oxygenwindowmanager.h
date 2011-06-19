@@ -55,14 +55,8 @@ namespace Oxygen
         //! destructor
         virtual ~WindowManager();
 
-        //! initialize hoooks
+        //! initialize hooks
         void initializeHooks( void );
-
-        //! register widget
-        virtual void registerWidget( GtkWidget* );
-
-        //! unregister widget
-        virtual void unregisterWidget( GtkWidget* );
 
         //! window grab mode
         enum Mode
@@ -97,19 +91,26 @@ namespace Oxygen
         //! on mouse leave
         static gboolean wmLeave(GtkWidget*, GdkEventCrossing*, gpointer );
 
-        //! on style change
-        static gboolean wmStyleSet( GtkWidget*, GtkStyle*, gpointer );
-
         //! on window destroy
         static gboolean wmDestroy( GtkWidget*, gpointer );
 
         //! delayed drag
         static gboolean startDelayedDrag( gpointer );
 
+        //! style-set hook
+        static gboolean styleSetHook( GSignalInvocationHint*, guint, const GValue*, gpointer );
+
         //! mouse button release event hook
         static gboolean buttonReleaseHook( GSignalInvocationHint*, guint, const GValue*, gpointer );
 
         //@}
+
+        //! register widget
+        /*! returns true if widget is effictively registered */
+        virtual bool registerWidget( GtkWidget* );
+
+        //! unregister widget
+        virtual void unregisterWidget( GtkWidget* );
 
         //! start dragging widget
         bool startDrag( GtkWidget*, GdkEventMotion* );
@@ -193,7 +194,6 @@ namespace Oxygen
             Signal _destroyId;
             Signal _pressId;
             Signal _motionId;
-            Signal _styleId;
             //@}
 
         };
@@ -208,6 +208,9 @@ namespace Oxygen
 
         //! true when hooks are initialized
         bool _hooksInitialized;
+
+        //! style set hook. Used to register widgets
+        Hook _styleSetHook;
 
         //! mouse button release event hook
         Hook _buttonReleaseHook;

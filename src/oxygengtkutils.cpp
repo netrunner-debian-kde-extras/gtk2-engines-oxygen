@@ -62,6 +62,18 @@ namespace Oxygen
     }
 
     //____________________________________________________________
+    bool Gtk::gtk_widget_has_custom_background( GtkWidget* widget, GtkStateType state )
+    {
+
+        // loop over all parents, recursively
+        for( GtkWidget* parent = widget; parent; parent = gtk_widget_get_parent( parent ) )
+        { if( gtk_widget_get_modifier_style(parent)->color_flags[state]&GTK_RC_BG ) return true; }
+
+        return false;
+
+    }
+
+    //____________________________________________________________
     bool Gtk::gtk_widget_is_applet( GtkWidget* widget )
     {
         if( !widget ) return false;
@@ -72,6 +84,7 @@ namespace Oxygen
 
         static const char* names[] =
         {
+            "Panel",
             "PanelWidget",
             "PanelApplet",
             "XfcePanelWindow",
@@ -185,12 +198,12 @@ namespace Oxygen
     }
 
     //________________________________________________________
-    bool Gtk::g_object_is_a( const GObject* object, const std::string& type_name )
+    bool Gtk::g_object_is_a( const GObject* object, const std::string& typeName )
     {
 
         if( object )
         {
-            const GType tmp( g_type_from_name( type_name.c_str() ) );
+            const GType tmp( g_type_from_name( typeName.c_str() ) );
             if( tmp )
             { return g_type_check_instance_is_a( (GTypeInstance*) object, tmp ); }
         }
@@ -220,6 +233,16 @@ namespace Oxygen
 
         for( GtkWidget* parent = widget; parent; parent = gtk_widget_get_parent( parent ) )
         { if( G_TYPE_CHECK_INSTANCE_TYPE( parent, type ) ) return parent; }
+
+        return 0L;
+    }
+
+    //________________________________________________________
+    GtkWidget* Gtk::gtk_parent_groupbox( GtkWidget* widget )
+    {
+
+        for( GtkWidget* parent = widget; parent; parent = gtk_widget_get_parent( parent ) )
+        { if( gtk_widget_is_groupbox( parent ) ) return parent; }
 
         return 0L;
     }
@@ -332,6 +355,7 @@ namespace Oxygen
         GList* children( gtk_container_get_children( GTK_CONTAINER( button ) ) );
         for( GList *child = g_list_first( children ); child; child = g_list_next( child ) )
         {
+
             if( GTK_IS_LABEL( child->data) )
             {
                 result = GTK_WIDGET( child->data );
@@ -699,9 +723,7 @@ namespace Oxygen
 
         if( !widget ) return false;
 
-        // this is an alternative way to get widget position with respect to top level window
-        // and top level window size. This is used in case the GdkWindow passed as argument is
-        // actually a 'non window' drawable
+        // get window
         GdkWindow* window( gtk_widget_get_parent_window( widget ) );
         if( !( window && GDK_IS_WINDOW( window ) ) ) return false;
 
@@ -718,6 +740,60 @@ namespace Oxygen
         }
 
         return success && ((!w) || *w > 0) && ((!h) || *h>0);
+
+    }
+
+    //________________________________________________________
+    bool Gtk::gtk_widget_map_to_parent( GtkWidget* widget, GtkWidget* parent, gint* x, gint* y, gint* w, gint* h )
+    {
+
+        // always initialize arguments (to invalid values)
+        if( x ) *x=0;
+        if( y ) *y=0;
+        if( w ) *w = -1;
+        if( h ) *h = -1;
+
+        if( !( widget && parent ) ) return false;
+
+        const GtkAllocation allocation( gtk_widget_get_allocation(  parent ) );
+        if( w ) *w = allocation.width;
+        if( h ) *h = allocation.height;
+
+        int xlocal, ylocal;
+        const bool success( gtk_widget_translate_coordinates( widget, parent, 0, 0, &xlocal, &ylocal ) );
+        if( success )
+        {
+
+            if( x ) *x=xlocal;
+            if( y ) *y=ylocal;
+
+        }
+
+        return success && ((!w) || *w > 0) && ((!h) || *h>0);
+
+    }
+
+    //________________________________________________________
+    bool Gtk::gdk_window_translate_origin( GdkWindow* parent, GdkWindow* child, gint* x, gint* y )
+    {
+        if( x ) *x = 0;
+        if( y ) *y = 0;
+        if( !( parent && child ) ) return false;
+        while( child && GDK_IS_WINDOW( child ) &&
+            child != parent &&
+            gdk_window_get_window_type( child ) != GDK_WINDOW_TOPLEVEL &&
+            gdk_window_get_window_type( child ) != GDK_WINDOW_TEMP
+            )
+        {
+            gint xloc;
+            gint yloc;
+            gdk_window_get_position( child, &xloc, &yloc );
+            if( x ) *x += xloc;
+            if( y ) *y += yloc;
+            child = gdk_window_get_parent( child );
+        }
+
+        return( child == parent );
 
     }
 
@@ -863,6 +939,50 @@ namespace Oxygen
             return gdk_pixbuf_scale_simple( src, width, height, GDK_INTERP_BILINEAR );
 
         }
+
+    }
+
+    //___________________________________________________________
+    void Gtk::gtk_viewport_get_position( GtkViewport* viewport, gint* x, gint* y )
+    {
+
+        // initialize
+        if( x ) *x = 0;
+        if( y ) *y = 0;
+
+        // get bin window
+        #if GTK_CHECK_VERSION( 2, 20, 0 )
+        GdkWindow* binWindow( gtk_viewport_get_bin_window( viewport ) );
+        #else
+        GdkWindow* binWindow( viewport->bin_window );
+        #endif
+
+        gint xBin(0), yBin(0);
+        gdk_window_get_geometry( binWindow, &xBin, &yBin, 0, 0, 0 );
+
+        // get view window
+        #if GTK_CHECK_VERSION( 2, 22, 0 )
+        GdkWindow* viewWindow( gtk_viewport_get_view_window( viewport ) );
+        #else
+        GdkWindow* viewWindow( viewport->view_window );
+        #endif
+
+        gint xView(0), yView(0);
+        gdk_window_get_geometry( viewWindow, &xView, &yView, 0, 0, 0 );
+
+        // calculate offsets
+        if( x ) *x = xView - xBin;
+        if( y ) *y = yView - yBin;
+
+        // also correct from widget thickness
+        GtkStyle* style( gtk_widget_get_style( GTK_WIDGET( viewport ) ) );
+        if( style )
+        {
+            if( x ) *x -= style->xthickness;
+            if( y ) *y -= style->ythickness;
+        }
+
+        return;
 
     }
 

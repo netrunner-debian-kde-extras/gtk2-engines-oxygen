@@ -3,7 +3,6 @@
 /*
 * this file is part of the oxygen gtk engine
 * Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
-* Copyright (c) 2010 Ruslan Kabatsayev <b7.10110111@gmail.com>
 *
 * This  library is free  software; you can  redistribute it and/or
 * modify it  under  the terms  of the  GNU Lesser  General  Public
@@ -22,6 +21,7 @@
 */
 
 #include "oxygensignal.h"
+#include "oxygentimer.h"
 
 #include <gtk/gtk.h>
 
@@ -34,7 +34,11 @@ namespace Oxygen
         public:
 
         //! constructor
-        ScrollBarData( void )
+        ScrollBarData( void ):
+            _target( 0L ),
+            _updatesDelayed( false ),
+            _delay( 10 ),
+            _locked( false )
         {}
 
         //! destructor
@@ -47,12 +51,39 @@ namespace Oxygen
         //! disconnect
         void disconnect( GtkWidget* );
 
+        //! toggle delayed updates
+        void setUpdatesDelayed( bool value )
+        { _updatesDelayed = value; }
+
+        //! set delay
+        void setDelay( int value )
+        { _delay = value; }
+
         protected:
 
         static void valueChanged( GtkRange*, gpointer );
 
+        //! delayed update
+        static gboolean delayedUpdate( gpointer );
+
         private:
 
+        //! pointer to associated widget
+        GtkWidget* _target;
+
+        //! true if updates are delayed
+        bool _updatesDelayed;
+
+        //! update delay
+        int _delay;
+
+        //! timer
+        Timer _timer;
+
+        //! true if next update must be delayed
+        bool _locked;
+
+        //! signal
         Signal _valueChangedId;
 
     };

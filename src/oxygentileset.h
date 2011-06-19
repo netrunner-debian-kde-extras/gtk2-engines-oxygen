@@ -103,7 +103,7 @@ namespace Oxygen
             Full = Ring|Center
         };
 
-        typedef Flags<Tile> Tiles;
+        OX_DECLARE_FLAGS( Tiles, Tile );
 
         //! return size associated to this tileset
         int width( void ) const
@@ -123,7 +123,14 @@ namespace Oxygen
         directions. Partial tiles are used as needed so that the entire rect is
         perfectly filled. Filling is performed as if all chunks are being drawn.
         */
-        void render( Cairo::Context&, int x, int y, int w, int h, unsigned int = Ring) const;
+        void render( cairo_t*, int x, int y, int w, int h, unsigned int = Ring) const;
+
+        //! returns surface for given index
+        const Cairo::Surface& surface( unsigned int index ) const
+        {
+            assert( index < _surfaces.size() );
+            return _surfaces[index];
+        }
 
         protected:
 
@@ -140,7 +147,7 @@ namespace Oxygen
         void initSurface( SurfaceList&, const Cairo::Surface&, int w, int h, int sx, int sy, int sw, int sh );
 
         //! copy pixmap
-        void copySurface( Cairo::Context&, int x, int y, const Cairo::Surface&, int sx, int sy, int sw, int sh, cairo_extend_t ) const;
+        void copySurface( cairo_t*, int x, int y, const Cairo::Surface&, int sx, int sy, int sw, int sh, cairo_extend_t ) const;
 
         private:
 
@@ -154,6 +161,8 @@ namespace Oxygen
         int _h3;
 
     };
+
+    OX_DECLARE_OPERATORS_FOR_FLAGS( TileSet::Tiles );
 
 }
 

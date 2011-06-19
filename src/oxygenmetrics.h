@@ -1,13 +1,15 @@
-#ifndef oxygenmenushellengine_h
-#define oxygenmenushellengine_h
+#ifndef oxygenmetrics_h
+#define oxygenmetrics_h
+
 /*
 * this file is part of the oxygen gtk engine
 * Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Ruslan Kabatsayev <b7.10110111@gmail.com>
 *
 * This  library is free  software; you can  redistribute it and/or
 * modify it  under  the terms  of the  GNU Lesser  General  Public
 * License  as published  by the Free  Software  Foundation; either
-* version 2 of the License, or(at your option ) any later version.
+* version 2 of the License, or( at your option ) any later version.
 *
 * This library is distributed  in the hope that it will be useful,
 * but  WITHOUT ANY WARRANTY; without even  the implied warranty of
@@ -20,38 +22,34 @@
 * MA 02110-1301, USA.
 */
 
-#include "oxygengenericengine.h"
-#include "oxygendatamap.h"
-#include "oxygenmenushelldata.h"
-
-#include <gtk/gtk.h>
-
 namespace Oxygen
 {
-    //! forward declaration
-    class Animations;
 
-    //! stores data associated to editable comboboxes
-    /*!
-    ensures that the text entry and the button of editable comboboxes
-    gets hovered and focus flags at the same time
-    */
-    class MenuShellEngine: public GenericEngine<MenuShellData>
+    //! metrics
+    /*! these are copied from the old KStyle WidgetProperties */
+    enum Metrics
     {
 
-        public:
+        /*
+        checkbox. Do not change, unless
+        changing the actual cached pixmap size
+        */
+        CheckBox_Size = 21,
 
-        //! constructor
-        MenuShellEngine( Animations* parent ):
-            GenericEngine<MenuShellData>( parent )
-            {}
+        // slider groove height
+        Slider_GrooveWidth = 7,
 
-        //! destructor
-        virtual ~MenuShellEngine( void )
-        {}
+        // menu vertical offset
+        Menu_VerticalOffset = 1,
+
+        /*
+        entries size margins. Do not change, unless
+        changing the corresponding oxygen-entry-margins style
+        in gtkrc
+        */
+        Entry_SideMargin = 3
 
     };
-
 }
 
 #endif

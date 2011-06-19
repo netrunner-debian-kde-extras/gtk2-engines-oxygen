@@ -33,15 +33,16 @@
 #include "oxygenanimations.h"
 #include "oxygenargbhelper.h"
 #include "oxygencairoutils.h"
+#include "oxygendbus.h"
 #include "oxygengtkcellinfo.h"
 #include "oxygengtkdetails.h"
 #include "oxygengtktypenames.h"
 #include "oxygengtkutils.h"
+#include "oxygenmetrics.h"
 #include "oxygenstyle.h"
 #include "oxygenwindowmanager.h"
 
 #include <iostream>
-
 namespace Oxygen
 {
 
@@ -49,6 +50,44 @@ namespace Oxygen
     GtkStyleClass* StyleWrapper::_parentClass = 0L;
     GTypeInfo StyleWrapper::_typeInfo;
     GType StyleWrapper::_type = 0L;
+
+    //___________________________________________________________________________________________________________
+    static void draw_animated_button(
+        GdkWindow* window,
+        GdkRectangle* clipRect,
+        GtkWidget* widget )
+    {
+
+        #if OXYGEN_DEBUG
+        std::cerr
+            << "Oxygen::draw_animated_button -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << std::endl;
+        #endif
+
+        ToolBarStateEngine& engine( Style::instance().animations().toolBarStateEngine() );
+        engine.registerWidget(widget);
+
+        if( engine.animatedRectangleIsValid( widget ) )
+        {
+
+            const GdkRectangle& rect( engine.animatedRectangle( widget ) );
+            Style::instance().renderButtonSlab( window, clipRect, rect.x, rect.y, rect.width, rect.height, Flat|Hover );
+
+        } else if( engine.isLocked( widget ) && gtk_widget_get_state( engine.widget( widget, AnimationCurrent ) ) != GTK_STATE_ACTIVE ) {
+
+            const GdkRectangle& rect( engine.rectangle( widget, AnimationCurrent ) );
+            Style::instance().renderButtonSlab( window, clipRect, rect.x, rect.y, rect.width, rect.height, Flat|Hover );
+
+        } else if( engine.isAnimated( widget, AnimationPrevious ) && gtk_widget_get_state( engine.widget( widget, AnimationPrevious ) ) != GTK_STATE_ACTIVE ) {
+
+            const AnimationData data( engine.animationData( widget, AnimationPrevious ) );
+            const GdkRectangle& rect( engine.rectangle( widget, AnimationPrevious ) );
+            Style::instance().renderButtonSlab( window, clipRect, rect.x, rect.y, rect.width, rect.height, Flat|Hover, data );
+
+        }
+
+    }
 
     //___________________________________________________________________________________________________________
     static void draw_flat_box(
@@ -68,16 +107,17 @@ namespace Oxygen
         Style::instance().sanitizeSize( window, w, h );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=flat_box, state=%s, shadow=%s, detail=%s",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ),
-            Gtk::TypeNames::shadow( shadow ),
-            detail );
+        std::cerr
+            << "Oxygen::draw_flat_box -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " shadow: " << Gtk::TypeNames::shadow( shadow )
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         const Gtk::Detail d( detail );
-        if( d.isBase() || d.isEventBox())
+        if( d.isBase() || d.isEventBox() )
         {
 
             // if background pixmap is provided, fallback to default painting
@@ -134,7 +174,11 @@ namespace Oxygen
             if( Gtk::gdk_window_is_base( window ) &&
                 !( GTK_IS_EVENT_BOX( widget ) &&
                 !gtk_event_box_get_above_child( GTK_EVENT_BOX( widget ) ) ) )
-            { Style::instance().windowManager().registerWidget( widget ); }
+            {
+                BackgroundHints hints( BackgroundGradient );
+                if( Style::instance().hasBackgroundSurface() ) hints |= BackgroundPixmap;
+                Style::instance().animations().backgroundHintEngine().registerWidget( widget, hints );
+            }
 
             // change gtk dialog button order
             GtkWidget *toplevel = gtk_widget_get_toplevel( widget );
@@ -143,6 +187,13 @@ namespace Oxygen
 
             // render background gradient
             Style::instance().renderWindowBackground( window, clipRect, x, y, w, h );
+
+            // possible groupbox background
+            if( d.isEventBox() && Gtk::gtk_parent_groupbox( widget ) )
+            { Style::instance().renderGroupBoxBackground( window, widget, clipRect, x, y, w, h, Blend ); }
+
+            // also draw possible animated tool button
+            draw_animated_button( window, clipRect, widget );
 
             return;
 
@@ -159,23 +210,26 @@ namespace Oxygen
                 return;
             }
 
-            //register to window manager
-            Style::instance().windowManager().registerWidget( widget );
-
             // for modified bg, fill with flat custom color
             if( gtk_widget_get_modifier_style(widget)->color_flags[state]&GTK_RC_BG )
             {
                 Style::instance().fill( window, clipRect, x, y, w, h, Gtk::gdk_get_color( style->bg[state] ) );
-                return;
+
+            } else {
+
+                // make sure that widget is registered to scrolledBarEngine,
+                // so that background gets updated properly
+                if( GtkWidget* parent = Gtk::gtk_parent_scrolled_window( widget ) )
+                { Style::instance().animations().scrollBarEngine().registerScrolledWindow( parent ); }
+
+                // render background gradient
+                Style::instance().renderWindowBackground( window, widget, clipRect, x, y, w, h );
+
             }
 
-            // make sure that widget is registered to scrolledBarEngine,
-            // so that background gets updated properly
-            if( GtkWidget* parent = Gtk::gtk_parent_scrolled_window( widget ) )
-            { Style::instance().animations().scrollBarEngine().registerScrolledWindow( parent ); }
+            // also draw possible animated tool button
+            draw_animated_button( window, clipRect, widget );
 
-            // render background gradient
-            Style::instance().renderWindowBackground( window, widget, clipRect, x, y, w, h );
             return;
 
         } else if( d.isTrough() ) {
@@ -232,9 +286,30 @@ namespace Oxygen
             else if( !(options&Focus) ) group = Palette::Inactive;
 
             // render background
+            // render "normal" background
+            bool drawTreeLines( true );
             ColorUtils::Rgba background;
-            if( d.isCellEven() || Gtk::gtk_combobox_is_tree_view( widget ) ) background = Style::instance().settings().palette().color( group, Palette::Base );
-            else if( d.isCellOdd() ) background = Style::instance().settings().palette().color( group, Palette::BaseAlternate );
+            if( gtk_widget_get_modifier_style(widget)->color_flags[GTK_STATE_NORMAL]&GTK_RC_BASE )
+            {
+
+                /*
+                do not draw tree lines when a custom background color is set
+                since it usually does not work for non-selected items
+                */
+                drawTreeLines = false;
+
+                // assign background
+                background = Gtk::gdk_get_color( style->base[GTK_STATE_NORMAL] );
+
+            } else if( d.isCellEven() || Gtk::gtk_combobox_is_tree_view( widget ) ) {
+
+                background = Style::instance().settings().palette().color( group, Palette::Base );
+
+            } else if( d.isCellOdd() ) {
+
+                background = Style::instance().settings().palette().color( group, Palette::BaseAlternate );
+
+            }
 
             if( background.isValid() ) Style::instance().fill( window, clipRect, x, y, w, h, background );
             if( Gtk::gtk_combobox_is_tree_view( widget ) )
@@ -273,7 +348,7 @@ namespace Oxygen
                     {
 
                         // tree lines
-                        if( Style::instance().settings().viewDrawTreeBranchLines() && showExpanders )
+                        if( drawTreeLines && Style::instance().settings().viewDrawTreeBranchLines() && showExpanders )
                         {
 
                             // generate flags from cell info
@@ -376,7 +451,8 @@ namespace Oxygen
             { options |= NoFill; }
 
             // calculate proper offsets so that the glow/shadow match parent frame
-            const int xOffset( style->xthickness + 1 - Style::Entry_SideMargin );
+            const int sideMargin( std::max( 0, style->xthickness - 2 ) );
+            const int xOffset( style->xthickness + 1 - sideMargin );
 
             // adjust horizontal positioning and width
             x -= xOffset;
@@ -409,19 +485,19 @@ namespace Oxygen
 
                 // partial highlight
                 TileSet::Tiles tiles( TileSet::Ring );
-
+                const AnimationData data( Style::instance().animations().widgetStateEngine().get( parent, options, AnimationHover|AnimationFocus, AnimationFocus ) );
                 if( Gtk::gtk_widget_layout_is_reversed( widget ) )
                 {
 
                     // hide left part and increase width
                     tiles &= ~TileSet::Left;
-                    Style::instance().renderHole( window, clipRect, x-7, y, w+7, h, options, tiles );
+                    Style::instance().renderHole( window, clipRect, x-9, y, w+9, h, options, data, tiles );
 
                 } else {
 
                     // hide right part and increase width
                     tiles &= ~TileSet::Right;
-                    Style::instance().renderHole( window, clipRect, x, y, w+7, h, options, tiles );
+                    Style::instance().renderHole( window, clipRect, x, y, w+9, h, options, data, tiles );
 
                 }
 
@@ -454,6 +530,9 @@ namespace Oxygen
                 ColorUtils::Rgba background( Gtk::gdk_get_color( style->base[gtk_widget_get_state(widget)] ) );
                 Style::instance().fill( window, clipRect, x, y, w, h, background );
 
+                // animation data
+                const AnimationData data( Style::instance().animations().widgetStateEngine().get( widget, options, AnimationHover|AnimationFocus, AnimationFocus ) );
+
                 // hole
                 TileSet::Tiles tiles( TileSet::Ring );
                 if( Gtk::gtk_widget_layout_is_reversed( widget ) )
@@ -461,17 +540,17 @@ namespace Oxygen
 
                     // hide right part and adjust width
                     tiles &= ~TileSet::Left;
-                    Style::instance().renderHole( window, clipRect, x-5, y, w+5, h, options, tiles );
+                    Style::instance().renderHole( window, clipRect, x-7, y, w+7, h, options, data, tiles );
 
                 } else {
 
                     // hide right part and adjust width
                     tiles &= ~TileSet::Right;
-                    Style::instance().renderHole( window, clipRect, x, y, w+5, h, options, tiles );
+                    Style::instance().renderHole( window, clipRect, x, y, w+7, h, options, data, tiles );
 
                 }
 
-            } else  {
+            } else {
 
                 const int yOffset( style->ythickness + 1 );
 
@@ -503,21 +582,22 @@ namespace Oxygen
                     if( localWindowX > 5 )
                     {
                         tiles &= ~TileSet::Left;
-                        x -= 7;
-                        w += 7;
+                        x -= 9;
+                        w += 9;
                     }
 
                     // remove right border if needed
                     if( localWindowX + localWindowWidth < widgetWindowWidth - 5 )
                     {
                         tiles &= ~TileSet::Right;
-                        w += 7;
+                        w += 9;
                     }
 
                 }
 
                 // render hole
-                Style::instance().renderHole( window, clipRect, x, y, w, h, options, tiles );
+                const AnimationData data( Style::instance().animations().widgetStateEngine().get( widget, options, AnimationHover|AnimationFocus, AnimationFocus ) );
+                Style::instance().renderHole( window, clipRect, x, y, w, h, options, data, tiles );
 
             }
 
@@ -537,7 +617,7 @@ namespace Oxygen
     {
 
         #if OXYGEN_DEBUG
-        std::cout << "Oxygen::processTabCloseButton" << std::endl;
+        std::cerr << "Oxygen::processTabCloseButton" << std::endl;
         #endif
 
         switch (state)
@@ -586,16 +666,16 @@ namespace Oxygen
         g_return_if_fail( style && window );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=box, state=%s, shadow=%s, detail=%s",
-            widget?G_OBJECT_TYPE_NAME( widget ):"0x0",
-            Gtk::TypeNames::state( state ),
-            Gtk::TypeNames::shadow( shadow ),
-            detail?detail:"0x0" );
+        std::cerr
+            << "Oxygen::draw_box -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " shadow: " << Gtk::TypeNames::shadow( shadow )
+            << " detail: " << (detail ? detail:"0x0" )
+            << " rect: " << Gtk::gdk_rectangle( x, y, w, h )
+            << " thickness: " << style->xthickness << "," << style->ythickness
+            << std::endl;
         #endif
-
-        if(GTK_IS_MENU_BAR( widget ) )
-        { Style::instance().animations().menuShellEngine().registerWidget(widget); }
 
         Style::instance().sanitizeSize( window, w, h );
         const Gtk::Detail d( detail );
@@ -616,19 +696,12 @@ namespace Oxygen
 
         } else if( d.isButton() || d.isOptionMenu() || d.isToggleButton() ) {
 
-            // check if it's PathBar toggle button
+            // pathbar buttons
             if( Gtk::gtk_button_is_in_path_bar(widget) )
             {
 
                 // https://bugzilla.gnome.org/show_bug.cgi?id=635511
                 std::string name(G_OBJECT_TYPE_NAME( gtk_widget_get_parent( widget ) ) );
-
-                // NautilusPathBar doesn't have any problem so only for GtkPathBar
-                if( !Style::instance().settings().applicationName().isMozilla( widget ) &&
-                    !Style::instance().settings().applicationName().isOpenOffice()
-                    && name == "GtkPathBar" )
-                { Style::instance().windowManager().registerWidget( widget ); }
-
                 Style::instance().animations().hoverEngine().registerWidget( widget );
 
                 // only two style options possible: hover or don't draw
@@ -665,7 +738,13 @@ namespace Oxygen
 
                 }
 
-            } else if( Gtk::gtk_button_is_header( widget ) ) {
+                return;
+
+            }
+
+            // treeview headers
+            if( Gtk::gtk_button_is_header( widget ) )
+            {
 
                 // register to scrolled window engine if any
                 if(
@@ -676,9 +755,14 @@ namespace Oxygen
 
                 // treevew header
                 Style::instance().renderHeaderBackground( window, clipRect, x, y, w, h );
+                return;
 
-            } else if( ( parent = Gtk::gtk_parent_combobox_entry( widget ) ) ) {
+            }
 
+            // combobox entry buttons
+            if( ( parent = Gtk::gtk_parent_combobox_entry( widget ) ) ) {
+
+                // combobox entry buttons
                 // keep track of whether button is active (pressed-down) or pre-lighted
                 const bool buttonActive( state == GTK_STATE_ACTIVE || state == GTK_STATE_PRELIGHT );
 
@@ -705,9 +789,11 @@ namespace Oxygen
                 Style::instance().animations().comboBoxEntryEngine().setButton( parent, widget );
 
                 // background
+                int sideMargin( 0 );
                 {
                     GtkWidget* entry( gtk_bin_get_child( GTK_BIN( parent ) ) );
                     GtkStyle* style( gtk_widget_get_style( entry ) );
+                    sideMargin = std::max( 0, style->xthickness - 2 );
                     ColorUtils::Rgba background( Gtk::gdk_get_color( style->base[state] ) );
                     Style::instance().fill( window, clipRect, x, y, w, h, background );
                 }
@@ -729,42 +815,47 @@ namespace Oxygen
 
                 // render
                 TileSet::Tiles tiles( TileSet::Ring);
+                const AnimationData data( Style::instance().animations().widgetStateEngine().get( parent, options, AnimationHover|AnimationFocus, AnimationFocus ) );
                 if( Gtk::gtk_widget_layout_is_reversed( widget ) )
                 {
 
                     // hide right and adjust width
                     tiles &= ~TileSet::Right;
-                    Style::instance().renderHoleBackground(window,clipRect, x-1, y, w+6, h, tiles );
+                    Style::instance().renderHoleBackground( window, widget, clipRect, x-1, y, w+6, h, tiles, sideMargin );
 
-                    x += Style::Entry_SideMargin;
-                    w -= Style::Entry_SideMargin;
-                    Style::instance().renderHole( window, clipRect, x-1, y, w+6, h, options, tiles  );
+                    x += sideMargin;
+                    w -= sideMargin;
+                    Style::instance().renderHole( window, clipRect, x-1, y, w+8, h, options, data, tiles  );
 
                 } else {
 
                     // hide left and adjust width
                     tiles &= ~TileSet::Left;
-                    Style::instance().renderHoleBackground(window,clipRect, x-5, y, w+6, h, tiles );
+                    Style::instance().renderHoleBackground( window, widget, clipRect, x-5, y, w+6, h, tiles, sideMargin );
 
-                    w -= Style::Entry_SideMargin;
-                    Style::instance().renderHole( window, clipRect, x-5, y, w+6, h, options, tiles  );
+                    w -= sideMargin;
+                    Style::instance().renderHole( window, clipRect, x-7, y, w+8, h, options, data, tiles  );
 
                 }
 
                 return;
 
-            } else if(
+            }
+
+            // combobox buttons
+            if(
                 ( parent = Gtk::gtk_parent_combobox( widget ) ) &&
                 !Style::instance().settings().applicationName().isMozilla( widget ) &&
                 Gtk::gtk_combobox_appears_as_list( parent )
                 )
             {
 
+                // combobox buttons
                 const bool reversed( Gtk::gtk_widget_layout_is_reversed( widget ) );
 
                 StyleOptions options( widget, state, shadow );
                 if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
-                    options |= Blend;
+                { options |= Blend; }
 
                 Style::instance().animations().comboBoxEngine().registerWidget( parent );
                 Style::instance().animations().comboBoxEngine().setButton( parent, widget );
@@ -774,19 +865,28 @@ namespace Oxygen
                 {
                     if( Style::instance().animations().comboBoxEngine().hovered( parent ) ) options |= Hover;
 
+                    // tiles
                     TileSet::Tiles tiles( TileSet::Ring );
+
+                    // animation state
+                    const AnimationData data( (options&Sunken) ?
+                        AnimationData():
+                        Style::instance().animations().widgetStateEngine().get( parent, options ) );
+
                     if( reversed )
                     {
 
                         tiles &= ~TileSet::Right;
-                        Style::instance().renderButtonSlab( window, clipRect, x, y, w+7, h, options, tiles );
+                        Style::instance().renderButtonSlab( window, clipRect, x, y, w+7, h, options, data, tiles );
 
                     } else {
 
                         tiles &= ~TileSet::Left;
-                        Style::instance().renderButtonSlab( window, clipRect, x-7, y, w+7, h, options, tiles );
+                        Style::instance().renderButtonSlab( window, clipRect, x-7, y, w+7, h, options, data, tiles );
 
                     }
+
+                    return;
 
                 } else {
 
@@ -794,114 +894,240 @@ namespace Oxygen
                     if( Style::instance().animations().comboBoxEngine().hovered( parent ) ) options |= Hover;
                     if( reversed ) Style::instance().renderButtonSlab( window, clipRect, x+1, y, w, h, options );
                     else Style::instance().renderButtonSlab( window, clipRect, x-1, y, w, h, options );
-
-                }
-
-            #if GTK_CHECK_VERSION(2, 20, 0)
-            } else if( GTK_IS_TOOL_ITEM_GROUP( widget ) ) {
-
-                return;
-
-            #endif
-
-            } else {
-
-                // for google chrome, make GtkChromeButton appear as flat
-                if(
-                    Style::instance().settings().applicationName().isGoogleChrome() &&
-                    !Gtk::gtk_button_is_flat( widget ) &&
-                    Gtk::g_object_is_a( G_OBJECT( widget ), "GtkChromeButton" ) )
-                { gtk_button_set_relief( GTK_BUTTON( widget ), GTK_RELIEF_NONE ); }
-
-                StyleOptions options;
-                if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
-                    options |= Blend;
-
-                options |= StyleOptions( widget, state, shadow );
-
-                if( widget && Gtk::gtk_button_is_flat( widget ) )
-                {
-
-                    // set button as flat and disable focus
-                    options |= Flat;
-                    options &= ~Focus;
-
-                    // register to Hover engine and check state
-                    Style::instance().animations().hoverEngine().registerWidget( widget );
-                    if( (options&Hover) )  Style::instance().animations().hoverEngine().setHovered( widget, true );
-                    else if( Style::instance().animations().hoverEngine().hovered( widget ) ) options |= Hover;
-
-                } else if( Gtk::gtk_parent_combo( widget ) ) {
-
-                    if( Style::instance().settings().applicationName().isOpenOffice() )
-                    {
-
-                        // Hover doesn't work correctly in OpenOffice, so disable it
-                        options &= ~(Hover|Focus);
-                        Style::instance().renderHole(window,clipRect,x-8,y-1,w+9,h+2,options,(TileSet::Tile)(TileSet::Full & (~TileSet::Left)));
-                        return;
-
-                    }
-
-                    /*
-                    make button flat; disable focus and hover
-                    (this is handled when rendering the arrow)
-                    */
-                    options |= Flat;
-                    options &= ~(Hover|Focus);
-                }
-
-                if( Gtk::gtk_notebook_is_close_button(widget)) {
-
-                    if( gtk_button_get_relief(GTK_BUTTON(widget))==GTK_RELIEF_NONE )
-                    { gtk_button_set_relief(GTK_BUTTON(widget),GTK_RELIEF_NORMAL); }
-
-                    if( Cairo::Surface surface = processTabCloseButton(widget,state) )
-                    {
-
-                        // hide previous image
-                        // show ours instead
-                        if( GtkWidget* image = Gtk::gtk_button_find_image(widget) )
-                        { gtk_widget_hide(image); }
-
-                        // center the button image
-                        const int height( cairo_surface_get_height( surface ) );
-                        const int width( cairo_surface_get_width( surface ) );
-                        x=x+(w-width)/2;
-                        y=y+(h-height)/2;
-
-                        // render the image
-                        Cairo::Context context( window, clipRect );
-                        cairo_set_source_surface( context, surface, x, y);
-                        cairo_paint(context);
-
-                    }
-
-                } else {
-
-                    if( style )
-                    { options._customColors.insert( options&Flat ? Palette::Window:Palette::Button, Gtk::gdk_get_color( style->bg[state] ) ); }
-
-                    Style::instance().renderButtonSlab( window, clipRect, x, y, w, h, options );
+                    return;
 
                 }
 
             }
 
-        } else if( d.isMenuBar() || d.isToolBar() ) {
+            // combo button
+            if( ( parent = Gtk::gtk_parent_combo( widget ) ) )
+            {
 
-            if( Style::instance().settings().applicationName().useFlatBackground( widget ) ||
-                Gtk::gtk_widget_is_applet( widget ) )
+                StyleOptions options( widget, state, shadow );
+                if(!Style::instance().settings().applicationName().useFlatBackground(widget))
+                { options |= Blend; }
+
+                if( Style::instance().settings().applicationName().isOpenOffice() )
+                {
+
+                    // Hover doesn't work correctly in OpenOffice, so disable it
+                    options &= ~(Hover|Focus);
+                    TileSet::Tiles tiles( TileSet::Full );
+                    tiles &= ( ~TileSet::Left );
+                    Style::instance().renderHole( window, clipRect, x-10, y-1, w+11, h+2, options, tiles );
+                    return;
+
+                } else {
+
+                    /*
+                    make button flat; disable focus and hover
+                    (this is handled when rendering the arrow
+                    This doesn't work for OpenOffice.
+                    */
+                    options |= Flat;
+                    options &= ~(Hover|Focus);
+                    Style::instance().animations().comboEngine().registerWidget( parent );
+                    return;
+
+                }
+
+            }
+
+            // notebook close buttons
+            if( Gtk::gtk_notebook_is_close_button(widget))
+            {
+
+                if( gtk_button_get_relief(GTK_BUTTON(widget))==GTK_RELIEF_NONE )
+                { gtk_button_set_relief(GTK_BUTTON(widget),GTK_RELIEF_NORMAL); }
+
+                if( Cairo::Surface surface = processTabCloseButton(widget,state) )
+                {
+
+                    // hide previous image
+                    // show ours instead
+                    if( GtkWidget* image = Gtk::gtk_button_find_image(widget) )
+                    { gtk_widget_hide(image); }
+
+                    // center the button image
+                    const int height( cairo_surface_get_height( surface ) );
+                    const int width( cairo_surface_get_width( surface ) );
+                    x=x+(w-width)/2;
+                    y=y+(h-height)/2;
+
+                    // render the image
+                    Cairo::Context context( window, clipRect );
+                    cairo_set_source_surface( context, surface, x, y);
+                    cairo_paint(context);
+
+                }
+
+                return;
+
+            }
+
+            #if GTK_CHECK_VERSION(2, 20, 0)
+            // tool itemgroup buttons
+            if( GTK_IS_TOOL_ITEM_GROUP( widget ) ) return;
+            #endif
+
+            // for google chrome, make GtkChromeButton appear as flat
+            if(
+                Style::instance().settings().applicationName().isGoogleChrome() &&
+                !Gtk::gtk_button_is_flat( widget ) &&
+                Gtk::g_object_is_a( G_OBJECT( widget ), "GtkChromeButton" ) )
+            { gtk_button_set_relief( GTK_BUTTON( widget ), GTK_RELIEF_NONE ); }
+
+            // options
+            StyleOptions options( widget, state, shadow );
+            if(!Style::instance().settings().applicationName().useFlatBackground(widget))
+            { options |= Blend; }
+
+            // default case
+            if( style )
+            { options._customColors.insert( options&Flat ? Palette::Window:Palette::Button, Gtk::gdk_get_color( style->bg[state] ) ); }
+
+            // flat buttons
+            bool useWidgetState( true );
+            AnimationData data;
+            if( widget && Gtk::gtk_button_is_flat( widget ) )
+            {
+
+                // set button as flat and disable focus
+                options |= Flat;
+                options &= ~Focus;
+
+                // register to Hover engine and check state
+                Style::instance().animations().hoverEngine().registerWidget( widget );
+                if( (options&Hover) )  Style::instance().animations().hoverEngine().setHovered( widget, true );
+                else if( Style::instance().animations().hoverEngine().hovered( widget ) ) options |= Hover;
+
+                // register to ToolBarState engine
+                ToolBarStateEngine& engine( Style::instance().animations().toolBarStateEngine() );
+                GtkWidget* parent( 0L );
+
+                bool toolPalette(false);
+                #if GTK_CHECK_VERSION(2,20,0)
+                toolPalette=Gtk::gtk_widget_find_parent( widget, GTK_TYPE_TOOL_PALETTE );
+                #endif
+
+                if( !toolPalette && (parent = engine.findParent( widget ) ) )
+                {
+
+                    // register child
+                    engine.registerChild( parent, widget, options&Hover );
+                    useWidgetState = false;
+
+                    if( engine.animatedRectangleIsValid( parent ) && !(options&Sunken) ) {
+
+                        return;
+
+                    } if( engine.widget( parent, AnimationCurrent ) == widget ) {
+
+                        data = engine.animationData( parent, AnimationCurrent );
+
+                        if( engine.isLocked( parent ) ) options |= Hover;
+
+                    } else if( (options & Sunken ) && engine.widget( parent, AnimationPrevious ) == widget ) {
+
+                        data = engine.animationData( parent, AnimationPrevious );
+
+                    }
+
+                }
+
+            }
+
+            // retrieve animation
+            if( useWidgetState )
+            { data = Style::instance().animations().widgetStateEngine().get( widget, options ); }
+
+            // render
+            Style::instance().renderButtonSlab( window, clipRect, x, y, w, h, options, data );
+
+        } else if( d.isMenuBar() ) {
+
+            if( !Style::instance().settings().applicationName().useFlatBackground( widget ) &&
+                !Gtk::gtk_widget_is_applet( widget ) )
+            {
+
+                // window background
+                Style::instance().renderWindowBackground( window, clipRect, x, y, w, h );
+
+                // possible groupbox background
+                if( Gtk::gtk_parent_groupbox( widget ) )
+                { Style::instance().renderGroupBoxBackground( window, widget, clipRect, x, y, w, h, Blend ); }
+
+            }
+            // check animation state
+            if( GTK_IS_MENU_BAR( widget ) )
+            {
+
+                MenuBarStateEngine& engine( Style::instance().animations().menuBarStateEngine() );
+                engine.registerWidget(widget);
+                if( engine.animatedRectangleIsValid( widget ) )
+                {
+
+                    const GdkRectangle& rect( engine.animatedRectangle( widget ) );
+                    StyleOptions options( Hover );
+                    if( !Style::instance().settings().applicationName().useFlatBackground( widget ) )
+                    { options |= Blend; }
+
+                    Style::instance().renderMenuItemRect( window, clipRect, engine.widget( widget, AnimationCurrent ), rect.x, rect.y, rect.width, rect.height, options );
+
+                } else if( engine.isAnimated( widget, AnimationPrevious ) ) {
+
+                    const AnimationData data( engine.animationData( widget, AnimationPrevious ) );
+                    const GdkRectangle& rect( engine.rectangle( widget, AnimationPrevious ) );
+                    StyleOptions options( Hover );
+                    if( !Style::instance().settings().applicationName().useFlatBackground( widget ) )
+                    { options |= Blend; }
+
+                    Style::instance().renderMenuItemRect( window, clipRect, engine.widget( widget, AnimationPrevious ), rect.x, rect.y, rect.width, rect.height, options, data );
+
+                }
+
+            }
+
+            return;
+
+        } else if( d.isToolBar() ) {
+
+            // eclipse works ok with animations, though should have flat background
+            const bool isEclipse(Style::instance().settings().applicationName().isEclipse());
+
+            if( ( Style::instance().settings().applicationName().useFlatBackground( widget ) ||
+                Gtk::gtk_widget_is_applet( widget ) ) && !isEclipse )
                 { return; }
 
-            Style::instance().windowManager().registerWidget( widget );
-            Style::instance().renderWindowBackground( window, clipRect, x, y, w, h );
+            if(!isEclipse)
+            {
+
+                Style::instance().renderWindowBackground( window, clipRect, x, y, w, h );
+
+                // possible groupbox background
+                if( Gtk::gtk_parent_groupbox( widget ) )
+                { Style::instance().renderGroupBoxBackground( window, widget, clipRect, x, y, w, h, Blend ); }
+
+            }
+
+            // also draw possible animated tool button
+            draw_animated_button( window, clipRect, widget );
             return;
 
         } else if( d.isMenu() ) {
 
             if( GTK_IS_MENU( widget ) && gtk_menu_get_tearoff_state( GTK_MENU( widget ) ) )
             {
+
+                if(
+                    Gtk::gdk_window_is_base( window ) &&
+                    !Style::instance().settings().applicationName().isMozilla( widget ) )
+                {
+                    BackgroundHints hints( BackgroundGradient );
+                    if( Style::instance().hasBackgroundSurface() ) hints |= BackgroundPixmap;
+                    Style::instance().animations().backgroundHintEngine().registerWidget( widget, hints );
+                }
 
                 Style::instance().renderWindowBackground( window, widget, clipRect, x, y, w, h );
 
@@ -937,16 +1163,16 @@ namespace Oxygen
                         const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( widget ) );
                         if( Style::instance().animations().widgetSizeEngine().updateSize( widget, allocation.width, allocation.height ) )
                         {
-                            GdkPixmap* mask( Style::instance().helper().roundMask( w, h - 2*Style::Menu_VerticalOffset ) );
-                            gdk_window_shape_combine_mask( gtk_widget_get_parent_window(widget), mask, 0, Style::Menu_VerticalOffset );
+                            GdkPixmap* mask( Style::instance().helper().roundMask( w, h - 2*Oxygen::Menu_VerticalOffset ) );
+                            gdk_window_shape_combine_mask( gtk_widget_get_parent_window(widget), mask, 0, Oxygen::Menu_VerticalOffset );
                             gdk_pixmap_unref(mask);
                         }
 
-                    }
-                    else
-                    {
+                    } else {
+
                         // reset mask if compositing has appeared after we had set a mask
                         gdk_window_shape_combine_mask( gtk_widget_get_parent_window(widget), NULL, 0, 0);
+
                     }
                 }
 
@@ -957,6 +1183,35 @@ namespace Oxygen
                 Style::instance().drawFloatFrame( window, clipRect, x, y, w, h, options );
 
             }
+
+            // check animation state
+            if( GTK_IS_MENU( widget ) )
+            {
+
+                MenuStateEngine& engine( Style::instance().animations().menuStateEngine() );
+                engine.registerWidget(widget);
+
+                if( engine.animatedRectangleIsValid( widget ) )
+                {
+
+                    const GdkRectangle& rect( engine.animatedRectangle( widget ) );
+                    Style::instance().renderMenuItemRect( window, clipRect, engine.widget( widget, AnimationCurrent ), rect.x, rect.y, rect.width, rect.height, Hover );
+
+                } else if( engine.isLocked( widget ) ) {
+
+                    const GdkRectangle& rect( engine.rectangle( widget, AnimationCurrent ) );
+                    Style::instance().renderMenuItemRect( window, clipRect, engine.widget( widget, AnimationCurrent ), rect.x, rect.y, rect.width, rect.height, Hover );
+
+               } else if( engine.isAnimated( widget, AnimationPrevious ) ) {
+
+                    const AnimationData data( engine.animationData( widget, AnimationPrevious ) );
+                    const GdkRectangle& rect( engine.rectangle( widget, AnimationPrevious ) );
+                    Style::instance().renderMenuItemRect( window, clipRect, engine.widget( widget, AnimationPrevious ), rect.x, rect.y, rect.width, rect.height, Hover, data );
+
+                 }
+
+            }
+
 
         } else if( d.isMenuScrollArrow() ) {
 
@@ -973,11 +1228,45 @@ namespace Oxygen
 
         } else if( d.isMenuItem() ) {
 
+            GtkWidget* parent( gtk_widget_get_parent( widget ) );
+            AnimationData data;
+            if( GTK_IS_MENU_BAR( parent ) )
+            {
+
+                MenuBarStateEngine& engine = Style::instance().animations().menuBarStateEngine();
+                engine.registerWidget( parent );
+                if( engine.animatedRectangleIsValid( parent ) )
+                {
+                    return;
+
+                } else if( engine.widget( parent, AnimationCurrent ) == widget ) {
+
+                    data = engine.animationData( parent, AnimationCurrent );
+
+                }
+
+            } else if( GTK_IS_MENU( parent ) ) {
+
+                MenuStateEngine& engine = Style::instance().animations().menuStateEngine();
+                engine.registerWidget( parent );
+                if( engine.animatedRectangleIsValid( parent ) )
+                {
+                    return;
+
+                } else if( engine.widget( parent, AnimationCurrent ) == widget ) {
+
+                    data = engine.animationData( parent, AnimationCurrent );
+
+                }
+
+            }
+
+
             StyleOptions options( widget, state, shadow );
             if( !Style::instance().settings().applicationName().useFlatBackground( widget ) )
             { options |= Blend; }
 
-            Style::instance().renderMenuItemRect( window, clipRect, widget, x, y, w, h, options );
+            Style::instance().renderMenuItemRect( window, clipRect, widget, x, y, w, h, options, data );
 
         } else if( d.isTroughAny() && GTK_IS_SCALE( widget ) ) {
 
@@ -1016,7 +1305,15 @@ namespace Oxygen
                     StyleWrapper::parentClass()->draw_box( style, window, state, shadow, clipRect, widget, detail, x, y, w, h );
 
                     if( !Gtk::gtk_widget_is_applet( widget ) )
-                    { Style::instance().renderWindowBackground( window, widget, clipRect, x, y, w, h ); }
+                    {
+
+                        Style::instance().renderWindowBackground( window, widget, clipRect, x, y, w, h );
+
+                        // possible groupbox background
+                        if( Gtk::gtk_parent_groupbox( widget ) )
+                        { Style::instance().renderGroupBoxBackground( window, widget, clipRect, x, y, w, h, Blend ); }
+
+                    }
                 }
 
                 StyleOptions options;
@@ -1036,6 +1333,8 @@ namespace Oxygen
                     // adjust scrollbar hole since it has wrong geometry in OOo
                     y-=1; h+=1;
                 }
+
+
                 Style::instance().adjustScrollBarHole( x, y, w, h, Vertical );
                 Style::instance().renderScrollBarHole( window, clipRect, x, y+1, w-1, h-1, Vertical );
 
@@ -1051,6 +1350,7 @@ namespace Oxygen
                     // adjust scrollbar hole since it has wrong geometry in OOo
                     x-=2; w+=1;
                 }
+
                 Style::instance().adjustScrollBarHole( x, y, w, h, StyleOptions() );
                 Style::instance().renderScrollBarHole( window, clipRect, x+1, y, w-2, h-1, StyleOptions() );
 
@@ -1102,7 +1402,9 @@ namespace Oxygen
             { options |= Hover; }
 
             TileSet::Tiles tiles( TileSet::Ring);
+            const AnimationData data( Style::instance().animations().widgetStateEngine().get( widget, options, AnimationHover|AnimationFocus, AnimationFocus ) );
 
+            const int sideMargin( std::max( 0, style->xthickness - 2 ) );
             if( Gtk::gtk_widget_layout_is_reversed( widget ) )
             {
 
@@ -1110,12 +1412,12 @@ namespace Oxygen
 
                 if( !Style::instance().settings().applicationName().isOpenOffice() &&
                     !Style::instance().settings().applicationName().isMozilla( widget ) )
-                { Style::instance().renderHoleBackground(window,clipRect, x-5, y-1, w+6, h+2, tiles ); }
+                { Style::instance().renderHoleBackground( window, widget, clipRect, x-1, y-1, w+6, h+2, tiles, sideMargin ); }
 
                 // shrink spinbox entry hole by 3px on right side
-                x += Style::Entry_SideMargin;
-                w -= Style::Entry_SideMargin;
-                Style::instance().renderHole( window, clipRect, x-1, y-1, w+6, h+2, options, tiles );
+                x += sideMargin;
+                w -= sideMargin;
+                Style::instance().renderHole( window, clipRect, x-1, y-1, w+8, h+2, options, data, tiles );
 
             } else {
 
@@ -1123,13 +1425,14 @@ namespace Oxygen
 
                 if( !Style::instance().settings().applicationName().isOpenOffice() &&
                     !Style::instance().settings().applicationName().isMozilla( widget ) )
-                { Style::instance().renderHoleBackground(window,clipRect, x-5, y-1, w+6, h+2, tiles ); }
+                { Style::instance().renderHoleBackground( window, widget, clipRect, x-5, y-1, w+6, h+2, tiles, sideMargin ); }
 
                 // shrink spinbox entry hole by 3px on right side
-                w -= Style::Entry_SideMargin;
-                Style::instance().renderHole( window, clipRect, x-5, y-1, w+6, h+2, options, tiles );
+                w -= sideMargin;
+                Style::instance().renderHole( window, clipRect, x-7, y-1, w+8, h+2, options, data, tiles );
 
             }
+
 
         } else if( d.isSpinButtonArrow() ) {
 
@@ -1141,17 +1444,37 @@ namespace Oxygen
             if(GTK_IS_PROGRESS_BAR(widget))
             {
 
+                // active state must be set by hand cause it is not set by gtk
+                if( !gtk_widget_is_sensitive( widget ) )
+                { options |= Disabled; }
+
                 // get orientation
                 if( Gtk::gtk_widget_is_vertical( widget ) )
                 { options |= Vertical; }
 
+                /*
+                need to adjust rect and clip for altered x/y thickness
+                because gtk passes it to the handle and not to the hole
+                */
+                const int delta_x = 1 - style->xthickness;
+                const int delta_y = -style->ythickness;
+                x += delta_x; w -= 2*delta_x;
+                y += delta_y; h -= 2*delta_y;
+
+                if( clipRect )
+                {
+                    clipRect->x += delta_x; clipRect->width -= 2*delta_x;
+                    clipRect->y += delta_y; clipRect->height -= 2*delta_y;
+                }
+
+                // need to adjust rect and clip to handle unexpected x/y thickness values
                 Style::instance().renderProgressBarHandle( window, clipRect, x, y, w, h, options );
 
             } else {
 
                 // most likely it's progressbar in the list
                 // FIXME: is it always the case ? Should we check on TREE_VIEW, CELL_VIEW, like done with scrollbar hole ?
-                Style::instance().renderProgressBarHandle( window, clipRect, x, y+2, w, h-4, options );
+                Style::instance().renderProgressBarHandle( window, clipRect, x-1, y, w+2, h, options );
 
             }
 
@@ -1160,7 +1483,7 @@ namespace Oxygen
         } else if( d.isEntryProgress() ) {
 
             StyleOptions options( widget, state, shadow );
-            Style::instance().renderProgressBarHandle( window, clipRect, x-1, y+1, w+2, h-2, options );
+            Style::instance().renderProgressBarHandle( window, clipRect, x-2, y-2, w+4, h+4, options );
 
         } else if( d.isTroughFillLevel () ) {
 
@@ -1197,12 +1520,15 @@ namespace Oxygen
         Style::instance().sanitizeSize( window, w, h );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=shadow, state=%s, shadow=%s, detail=%s",
-            widget?G_OBJECT_TYPE_NAME( widget ):"0x0",
-            Gtk::TypeNames::state( state ),
-            Gtk::TypeNames::shadow( shadow ),
-            detail?detail:"0x0" );
+        std::cerr
+            << "Oxygen::draw_shadow -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " shadow: " << Gtk::TypeNames::shadow( shadow )
+            << " detail: " << (detail ? detail:"0x0" )
+            << " rect: " << Gtk::gdk_rectangle( x, y, w, h )
+            << " thickness: " << style->xthickness << "," << style->ythickness
+            << std::endl;
         #endif
 
         GtkWidget* parent( 0L );
@@ -1253,27 +1579,28 @@ namespace Oxygen
             // store parent allocation
             GtkAllocation allocation( Gtk::gtk_widget_get_allocation( parent ) );
 
-            if( !(options&Alpha) )
+            // always register to widget size engine
+            Style::instance().animations().widgetSizeEngine().registerWidget( parent );
+            const bool sizeChanged( Style::instance().animations().widgetSizeEngine().updateSize( parent, allocation.width, allocation.height ) );
+
+            if( sizeChanged )
             {
-                // the same as with menus and tooltips (but changed a bit to take scrollbars into account)
-                // make background window rounded
-                Style::instance().animations().widgetSizeEngine().registerWidget( parent );
-                if( Style::instance().animations().widgetSizeEngine().updateSize( parent, allocation.width, allocation.height ) )
+
+                // update window shape
+                if( !(options&Alpha) )
                 {
+                    // the same as with menus and tooltips (but changed a bit to take scrollbars into account)
+                    // make background window rounded
                     GdkPixmap* mask( Style::instance().helper().roundMask( allocation.width, allocation.height ) );
                     gdk_window_shape_combine_mask( gtk_widget_get_window( parent ), mask, 0, 0 );
                     gdk_pixmap_unref( mask );
                 }
 
-            }
-
-            if( GList* children=gtk_container_get_children(GTK_CONTAINER( widget )) )
-            {
-                widget=GTK_WIDGET( g_list_first(children)->data );
-                Style::instance().animations().widgetSizeEngine().registerWidget( widget );
-                const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( widget ) );
-                if( Style::instance().animations().widgetSizeEngine().updateSize( widget, allocation.width, allocation.height ) )
+                // also sets inner list mask
+                if( GtkWidget* child = gtk_bin_get_child( GTK_BIN( widget ) ) )
                 {
+
+                    const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( child ) );
 
                     // offset is needed to make combobox list border 3px wide instead of default 2
                     // additional pixel is for ugly shadow
@@ -1283,50 +1610,17 @@ namespace Oxygen
                         allocation.height - 2*offset,
                         3 ) );
 
-                    gdk_window_shape_combine_mask( gtk_widget_get_window( widget ), mask, offset, offset );
+                    gdk_window_shape_combine_mask( gtk_widget_get_window( child ), mask, offset, offset );
                     gdk_pixmap_unref( mask );
+
                 }
 
-
-                if( children ) g_list_free( children );
             }
 
             // menu background and float frame
             GdkWindow* parentWindow( gtk_widget_get_window( parent ) );
             Style::instance().renderMenuBackground( parentWindow, clipRect, allocation.x, allocation.y, allocation.width, allocation.height, options );
             Style::instance().drawFloatFrame( parentWindow, clipRect, allocation.x, allocation.y, allocation.width, allocation.height, options );
-
-            #if ENABLE_COMBOBOX_LIST_RESIZE
-
-            // find matching pressed down combobox (or comboboxEntry)
-            int sideMargin( 3 );
-            GtkWidget* combobox = Style::instance().animations().comboBoxEngine().pressedComboBox();
-            if( Style::Entry_SideMargin && !combobox )
-            {
-                combobox = Style::instance().animations().comboBoxEntryEngine().pressedComboBoxEntry();
-                sideMargin = Style::Entry_SideMargin;
-            }
-
-            // resize the list to match combobox width (taking into account its lesser width because of button glow)
-            if( combobox )
-            {
-
-                int w, h;
-                GtkWindow* window( GTK_WINDOW( parent ) );
-                gtk_window_get_size( window, &w, &h );
-                const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( combobox ) );
-                if( allocation.width-6 != w )
-                {
-                    gtk_widget_set_size_request( parent, allocation.width - 6, h );
-
-                    gint targetX, dummy, y;
-                    gtk_window_get_position( window, &dummy, &y );
-                    gdk_window_get_origin( gtk_widget_get_window( combobox ), &targetX, &dummy);
-                    gtk_window_move( window, targetX + allocation.x + 3, y );
-                }
-
-            }
-            #endif
 
             return;
 
@@ -1397,24 +1691,25 @@ namespace Oxygen
 
                 // render
                 TileSet::Tiles tiles( TileSet::Ring );
-
+                const AnimationData data( Style::instance().animations().widgetStateEngine().get( parent, options, AnimationHover|AnimationFocus, AnimationFocus ) );
+                const int sideMargin( std::max( 0, style->xthickness - 2 ) );
                 if( Gtk::gtk_widget_layout_is_reversed( widget ) )
                 {
 
                     tiles &= ~TileSet::Left;
-                    Style::instance().renderHoleBackground( window, clipRect, x-6, y, w+7, h, tiles );
+                    Style::instance().renderHoleBackground( window, widget, clipRect, x-6, y, w+7, h, tiles, sideMargin );
 
-                    w -= Style::Entry_SideMargin;
-                    Style::instance().renderHole( window, clipRect, x-6, y, w+7, h, options, tiles );
+                    w -= sideMargin;
+                    Style::instance().renderHole( window, clipRect, x-8, y, w+9, h, options, data, tiles );
 
                 } else {
 
                     tiles &= ~TileSet::Right;
-                    Style::instance().renderHoleBackground( window, clipRect, x-1, y, w+7, h, tiles );
+                    Style::instance().renderHoleBackground( window, widget, clipRect, x-1, y, w+7, h, tiles, sideMargin );
 
-                    x += Style::Entry_SideMargin;
-                    w -= Style::Entry_SideMargin;
-                    Style::instance().renderHole( window, clipRect, x-1, y, w+7, h, options, tiles );
+                    x += sideMargin;
+                    w -= sideMargin;
+                    Style::instance().renderHole( window, clipRect, x-1, y, w+9, h, options, data, tiles );
 
                 }
 
@@ -1454,8 +1749,12 @@ namespace Oxygen
                 // basic adjustments
                 x-=1; w+=2;
 
+                // animation data
+                const AnimationData data( Style::instance().animations().widgetStateEngine().get( widget, options, AnimationHover|AnimationFocus, AnimationFocus ) );
+
                 TileSet::Tiles tiles( TileSet::Ring );
 
+                const int sideMargin( std::max( 0, style->xthickness - 2 ) );
                 if( Gtk::gtk_widget_layout_is_reversed( widget ) )
                 {
 
@@ -1463,11 +1762,11 @@ namespace Oxygen
 
                     if( !Style::instance().settings().applicationName().isOpenOffice() )
                     {
-                        Style::instance().renderHoleBackground( window, clipRect, x, y, w, h, tiles );
-                        w-= Style::Entry_SideMargin;
+                        Style::instance().renderHoleBackground( window, widget, clipRect, x, y, w, h, tiles, sideMargin );
+                        w-= sideMargin;
                     }
 
-                    Style::instance().renderHole( window, clipRect, x-5, y, w+5, h, options, tiles );
+                    Style::instance().renderHole( window, clipRect, x-7, y, w+7, h, options, data, tiles );
 
                 } else {
 
@@ -1475,11 +1774,12 @@ namespace Oxygen
 
                     if( !Style::instance().settings().applicationName().isOpenOffice() )
                     {
-                        Style::instance().renderHoleBackground( window, clipRect, x, y, w, h, tiles );
-                        x += Style::Entry_SideMargin; w-= Style::Entry_SideMargin;
+                        Style::instance().renderHoleBackground( window, widget, clipRect, x, y, w, h, tiles, sideMargin );
+                        x += sideMargin;
+                        w -= sideMargin;
                     }
 
-                    Style::instance().renderHole( window, clipRect, x, y, w+5, h, options, tiles );
+                    Style::instance().renderHole( window, clipRect, x, y, w+7, h, options, data, tiles );
 
                 }
 
@@ -1518,7 +1818,7 @@ namespace Oxygen
                     {
 
                         options &= ~NoFill;
-                        Style::instance().renderHoleBackground( window, clipRect, x-1, y-1, w+2, h+2 );
+                        Style::instance().renderHoleBackground( window, widget, clipRect, x-1, y-1, w+2, h+2 );
                         Style::instance().renderHole( window, clipRect, x-1, y-1, w+2, h+2, options );
 
                     } else {
@@ -1533,16 +1833,31 @@ namespace Oxygen
                     x-=1; y-=1;
                     w+=2; h+=2;
 
+                    const int sideMargin( std::max( 0, style->xthickness - 2 ) );
                     if( !Style::instance().settings().applicationName().isMozilla( widget ) )
-                    { Style::instance().renderHoleBackground( window, clipRect, x, y, w, h ); }
+                    { Style::instance().renderHoleBackground( window, widget, clipRect, x, y, w, h, TileSet::Full, sideMargin ); }
 
                     // shrink entry by 3px at each side
                     if( d.isEntry() )
                     {
-                        x += Style::Entry_SideMargin;
-                        w -= 2*Style::Entry_SideMargin;
+
+                        x += sideMargin;
+                        w -= 2*sideMargin;
+
                     }
-                    Style::instance().renderHole( window, clipRect, x, y, w, h, options );
+
+                    // animation
+                    const AnimationData data( Style::instance().animations().widgetStateEngine().get( widget, options, AnimationHover|AnimationFocus, AnimationFocus ) );
+                    if(!Style::instance().animations().innerShadowEngine().contains(widget) || shadow!=GTK_SHADOW_IN)
+                    {
+
+                        Style::instance().renderHole( window, clipRect, x, y, w, h, options, data );
+
+                    } else {
+
+                        Style::instance().renderHole( window, clipRect, x+1, y+1, w-2, h-2, options, data );
+
+                    }
 
                 }
 
@@ -1557,15 +1872,16 @@ namespace Oxygen
         } else if (GTK_IS_NOTEBOOK(widget)) {
 
             if( !Style::instance().settings().applicationName().isOpenOffice() )
-            { Style::instance().renderWindowBackground( window, clipRect, x-4, y-4, w+8, h+8 ); }
+            {
+                Style::instance().renderWindowBackground( window, clipRect, x-4, y-4, w+8, h+8 );
+                draw_animated_button( window, clipRect, widget );
+            }
 
             if( gtk_notebook_get_show_tabs( GTK_NOTEBOOK( widget ) ) )
             {
+
                 Style::instance().renderSlab(window,clipRect,x-1,y-1,w+2,h+2,NoFill);
-            }
-            else
-            {
-                gtk_notebook_set_show_border( GTK_NOTEBOOK(widget), FALSE );
+
             }
 
         } else if( GTK_IS_CALENDAR( widget ) && shadow == GTK_SHADOW_OUT ) {
@@ -1577,10 +1893,10 @@ namespace Oxygen
                 Style::instance().renderWindowBackground( window, widget, clipRect,x+2,y+2,w-4,h-6 );
             }
 
-            StyleOptions options;
+            StyleOptions options( NoFill );
             if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
-                options |= Blend;
-            options |= NoFill;
+            { options |= Blend; }
+
             Style::instance().renderSlab(window,clipRect,x-2,y-2,w+4,h+2, options );
 
         } else if(
@@ -1591,9 +1907,10 @@ namespace Oxygen
             Style::instance().animations().comboBoxEngine().registerWidget( parent );
             Style::instance().animations().comboBoxEngine().registerChild( parent, widget );
             GtkShadowType shadow( Style::instance().animations().comboBoxEngine().pressed( parent ) ? GTK_SHADOW_IN:GTK_SHADOW_OUT );
+
             StyleOptions options( widget, state, shadow );
             if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
-                options |= Blend;
+            { options |= Blend; }
 
             if( Style::instance().animations().comboBoxEngine().hasFocus( parent ) ) options |= Focus;
             else options &= ~Focus;
@@ -1601,18 +1918,22 @@ namespace Oxygen
             if(  Style::instance().animations().comboBoxEngine().hovered( parent ) ) options |= Hover;
             else options &= ~Hover;
 
+            // animation state
+            const AnimationData data( (options&Sunken) ? AnimationData():Style::instance().animations().widgetStateEngine().get( parent, options ) );
+
+            // tiles
             TileSet::Tiles tiles( TileSet::Ring );
 
             if( Gtk::gtk_widget_layout_is_reversed( widget ) )
             {
 
                 tiles &= ~TileSet::Left;
-                Style::instance().renderButtonSlab( window, clipRect, x-10, y, w+10, h, options, tiles );
+                Style::instance().renderButtonSlab( window, clipRect, x-10, y, w+10, h, options, data, tiles );
 
             } else {
 
                 tiles &= ~TileSet::Right;
-                Style::instance().renderButtonSlab( window, clipRect, x, y, w+10, h, options, tiles );
+                Style::instance().renderButtonSlab( window, clipRect, x, y, w+10, h, options, data, tiles );
 
             }
 
@@ -1620,8 +1941,7 @@ namespace Oxygen
 
             // it's likely progressbar hole
             // FIXME: is it enough to check for TreeView? is shadow_in the only possible case?
-            StyleOptions options;
-            Style::instance().renderProgressBarHole(window,clipRect,x-2,y,w+4,h,options);
+            Style::instance().renderProgressBarHole( window, clipRect, x-2, y, w+4, h, StyleOptions() );
 
         } else if( shadow == GTK_SHADOW_IN && !Gtk::gtk_parent_statusbar( widget ) ) {
 
@@ -1654,9 +1974,12 @@ namespace Oxygen
             // hole background is needed for some special cases
             if( GTK_IS_CALENDAR( widget ) )
             {
+
+                const int sideMargin( std::max( 0, style->xthickness - 2 ) );
                 Style::instance().renderHoleBackground(
-                    window, clipRect,
-                    x-1-Style::Entry_SideMargin, y-1, w+2+2*Style::Entry_SideMargin, h+2 );
+                    window, widget, clipRect,
+                    x-1-sideMargin, y-1, w+2+2*sideMargin, h+2,
+                    TileSet::Full, sideMargin );
             }
 
             // hole
@@ -1669,12 +1992,15 @@ namespace Oxygen
 
         } else if( shadow == GTK_SHADOW_OUT ) {
 
-            // default shadow_out frame
-            StyleOptions options;
-            if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
-                options |= Blend;
-            options |= NoFill;
-            Style::instance().renderSlab( window, clipRect, x-1, y-1, w+2, h+2, options );
+            if( d.isFrame() && Gtk::gtk_widget_is_groupbox( widget ) )
+            {
+                Style::instance().renderGroupBoxFrame( window, widget, clipRect, x-1, y-1, w+2, h+2, Blend );
+
+            } else {
+
+                Style::instance().renderSlab( window, clipRect, x-1, y-1, w+2, h+2, NoFill );
+
+            }
 
         }
 
@@ -1699,12 +2025,13 @@ namespace Oxygen
         Style::instance().sanitizeSize( window, w, h );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=check, state=%s, shadow=%s, detail=%s",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ),
-            Gtk::TypeNames::shadow( shadow ),
-            detail );
+        std::cerr
+            << "Oxygen::draw_check -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " shadow: " << Gtk::TypeNames::shadow( shadow )
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         const Gtk::Detail d( detail );
@@ -1712,34 +2039,53 @@ namespace Oxygen
         {
 
             StyleOptions options( widget, state, shadow );
-            if( !(d.isCellCheck() || Gtk::gtk_parent_tree_view( widget ) ) )
-            {
-                // enable blending
-                if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
-                    options |= Blend;
-            }
 
+            // test whether blending should be enabled
+            if( !(
+                d.isCellCheck() ||
+                Gtk::gtk_parent_tree_view( widget ) ||
+                Gtk::gtk_widget_has_custom_background( widget ) ||
+                Style::instance().settings().applicationName().useFlatBackground( widget )
+                ) )
+            { options |= Blend; }
+
+            AnimationData data;
             if( d.isCellCheck() )
             {
+
+                /*
+                TODO: use dedicated engine to handle animations.
+                It should use Widget and CellInfo for tagging, and work like
+                TabWidgetState engine
+                */
                 options &= ~(Focus|Hover);
                 if( GTK_IS_TREE_VIEW( widget ) )
                 {
                     GtkTreeView* treeView( GTK_TREE_VIEW( widget ) );
-                    Gtk::CellInfo cellInfo( treeView, x, y, w, h );
+                    const Gtk::CellInfo cellInfo( treeView, x, y, w, h );
                     if( cellInfo.isValid() &&
                         Style::instance().animations().treeViewEngine().contains( widget ) &&
                         Style::instance().animations().treeViewEngine().isCellHovered( widget, cellInfo, false ) )
                     { options |= Hover; }
+
+                    // retrieve animation state
+                    data = Style::instance().animations().treeViewStateEngine().get( widget, cellInfo, options );
+
                 }
+
+            } else {
+
+                // retrieve animation state
+                data = Style::instance().animations().widgetStateEngine().get( widget, options );
 
             }
 
-            Style::instance().renderCheckBox( window, clipRect, x, y, w, h, shadow, options );
+            Style::instance().renderCheckBox( window, clipRect, x, y, w, h, shadow, options, data );
 
         } else if( d.isCheck() && GTK_IS_CHECK_MENU_ITEM( widget ) ) {
 
             StyleOptions options( widget, state, shadow );
-            options |= (Blend|Flat|NoFill );
+            options |= (Blend|Flat|NoFill);
             Style::instance().renderCheckBox( window, clipRect, x, y, w, h, shadow, options );
 
         } else {
@@ -1769,12 +2115,13 @@ namespace Oxygen
         Style::instance().sanitizeSize( window, w, h );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=option, state=%s, shadow=%s, detail=%s",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ),
-            Gtk::TypeNames::shadow( shadow ),
-            detail );
+        std::cerr
+            << "Oxygen::draw_option -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " shadow: " << Gtk::TypeNames::shadow( shadow )
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         Gtk::Detail d( detail );
@@ -1782,10 +2129,15 @@ namespace Oxygen
         {
 
             StyleOptions options( widget, state, shadow );
-            if( !Gtk::gtk_parent_tree_view( widget ) &&
-                    !Style::instance().settings().applicationName().useFlatBackground( widget ))
+            if( !(
+                Gtk::gtk_parent_tree_view( widget ) ||
+                Gtk::gtk_widget_has_custom_background( widget ) ||
+                Style::instance().settings().applicationName().useFlatBackground(widget) ) )
             { options |= Blend; }
-            Style::instance().renderRadioButton( window, clipRect, x, y, w, h, shadow, options );
+
+            // retrieve animation state and render accordingly
+            const AnimationData data( Style::instance().animations().widgetStateEngine().get( widget, options ) );
+            Style::instance().renderRadioButton( window, clipRect, x, y, w, h, shadow, options, data );
 
         } else if( d.isOption() || d.isCellRadio() ) {
 
@@ -1794,7 +2146,8 @@ namespace Oxygen
             if( !( d.isCellRadio() || Gtk::gtk_parent_tree_view( widget ) ) )
             {
                 if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
-                    options |= Blend;
+                { options |= Blend; }
+
                 if( Gtk::gtk_parent_menu( widget ) )
                 {
 
@@ -1807,22 +2160,32 @@ namespace Oxygen
 
             }
 
+            AnimationData data;
             if( d.isCellRadio() )
             {
+                /*
+                TODO: use dedicated engine to handle animations.
+                It should use Widget and CellInfo for tagging, and work like
+                TabWidgetState engine
+                */
                 options &= ~(Focus|Hover);
                 if( GTK_IS_TREE_VIEW( widget ) )
                 {
+
                     GtkTreeView* treeView( GTK_TREE_VIEW( widget ) );
                     Gtk::CellInfo cellInfo( treeView, x, y, w, h );
                     if( cellInfo.isValid() &&
                         Style::instance().animations().treeViewEngine().contains( widget ) &&
                         Style::instance().animations().treeViewEngine().isCellHovered( widget, cellInfo, false ) )
                     { options |= Hover; }
+
+                    data = Style::instance().animations().treeViewStateEngine().get( widget, cellInfo, options );
+
                 }
 
             }
 
-            Style::instance().renderRadioButton( window, clipRect, x, y, w, h, shadow, options );
+            Style::instance().renderRadioButton( window, clipRect, x, y, w, h, shadow, options, data );
 
         } else {
 
@@ -1848,11 +2211,12 @@ namespace Oxygen
         g_return_if_fail( style && window );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=hline, state=%s, detail=%s",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ),
-            detail );
+        std::cerr
+            << "Oxygen::draw_hline -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         Gtk::Detail d( detail );
@@ -1905,7 +2269,8 @@ namespace Oxygen
             if( !Gtk::gtk_parent_tree_view( widget ) )
             {
                 if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
-                    options |= Blend;
+                { options |= Blend; }
+
                 if( Gtk::gtk_parent_menu( widget ) ) options |= Menu;
             }
 
@@ -1929,11 +2294,12 @@ namespace Oxygen
         g_return_if_fail( style && window );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=vline, state=%s, detail=%s",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ),
-            detail );
+        std::cerr
+            << "Oxygen::draw_vline -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         // disable vline in buttons (should correspond to comboboxes)
@@ -1946,8 +2312,10 @@ namespace Oxygen
             if( !Gtk::gtk_parent_tree_view( widget ) )
             {
                 if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
-                    options |= Blend;
+                { options |= Blend; }
+
                 if( Gtk::gtk_parent_menu( widget ) ) options |= Menu;
+
             }
             Style::instance().drawSeparator( window, clipRect, x+1, y1, 0, y2-y1, options );
 
@@ -1975,14 +2343,15 @@ namespace Oxygen
         Style::instance().sanitizeSize( window, w, h );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=arrow, state=%s, shadow=%s, detail=%s, arrow=%s, fill=%d",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ),
-            Gtk::TypeNames::shadow( shadow ),
-            detail,
-            Gtk::TypeNames::arrow( arrow ),
-            fill );
+        std::cerr
+            << "Oxygen::draw_arrow -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " shadow: " << Gtk::TypeNames::shadow( shadow )
+            << " arrow: " << Gtk::TypeNames::arrow( arrow )
+            << " fill: " << (fill ? "true":"false")
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         {
@@ -1996,6 +2365,7 @@ namespace Oxygen
 
         const Gtk::Detail d( detail );
 
+        // by default all arrows are animated
         QtSettings::ArrowSize arrowSize( QtSettings::ArrowNormal );
         if( d.isMenuItem() && Style::instance().settings().applicationName().isMozilla( widget ) )
         { arrowSize = QtSettings::ArrowTiny; }
@@ -2004,11 +2374,18 @@ namespace Oxygen
         Palette::Role role( Palette::ButtonText );
 
         // define options
-        StyleOptions options( Contrast );
-        options |= StyleOptions( widget, state );
+        StyleOptions options( widget, state );
+        options |= Contrast;
 
         // Arrows which are active are painted as hovered
         if( state == GTK_STATE_ACTIVE ) options |= Hover;
+
+        // animation data
+        AnimationData data;
+
+        // if true, widgetStateEngine is used to decide on animation state
+        // use either custom engine, or disable animation, otherwise
+        bool useWidgetStateEngine( true );
 
         GtkWidget* parent( 0L );
         if( d.isTearOffMenuItem() )
@@ -2022,14 +2399,20 @@ namespace Oxygen
             // disable highlight in menus, for consistancy with oxygen qt style
             options &= ~( Focus|Hover );
 
+            useWidgetStateEngine = false;
+
         } else if( d.isMenuItem() && !Gtk::gtk_parent_tree_view( widget ) ) {
 
             // disable highlight in menus, for consistancy with oxygen qt style
             options &= ~( Focus|Hover );
             role = Palette::WindowText;
+            useWidgetStateEngine = false;
 
         } else if( d.isSpinButton() ) {
 
+            // use dedicated engine to get animation state
+            data = Style::instance().animations().arrowStateEngine().get( widget, arrow, options );
+            useWidgetStateEngine = false;
 
             if( Gtk::gtk_widget_layout_is_reversed( widget ) ) x+=1;
             else x-=1;
@@ -2047,6 +2430,10 @@ namespace Oxygen
             role = Palette::Text;
 
         } else if( d.isNotebook() ) {
+
+            // use dedicated engine to get animation state
+            data = Style::instance().animations().arrowStateEngine().get( widget, arrow, options );
+            useWidgetStateEngine = false;
 
             if( GTK_IS_NOTEBOOK( widget ) )
             {
@@ -2080,6 +2467,8 @@ namespace Oxygen
 
         } else if( ( parent = Gtk::gtk_parent_combobox( widget ) ) ) {
 
+            useWidgetStateEngine = false;
+
             options &= ~( Focus|Hover );
             role = Palette::ButtonText;
 
@@ -2092,6 +2481,7 @@ namespace Oxygen
             !Gtk::gtk_parent_combo( widget ) )
         {
 
+            useWidgetStateEngine = false;
             options &= ~( Focus|Hover );
             if( d.isArrow() && GTK_IS_ARROW( widget ) )
             {
@@ -2102,36 +2492,34 @@ namespace Oxygen
                 role = Palette::WindowText;
             }
 
-        } else if( GTK_IS_CALENDAR( widget ) && !Gtk::gtk_widget_is_applet( widget ) ) {
+        } else if( GTK_IS_CALENDAR( widget ) ) {
 
-            // need to render background behind arrows from calendar
-            // offsets are empirical
-            Style::instance().renderWindowBackground( window, widget, clipRect, x-2, y-3, w+4, h+6 );
-            role = Palette::WindowText;
+            // FIXME: needs dedicated engine to
+            // handle smooth animations
+            useWidgetStateEngine = false;
+
+            if( !Gtk::gtk_widget_is_applet( widget ) )
+            {
+
+                // need to render background behind arrows from calendar
+                // offsets are empirical
+                Style::instance().renderWindowBackground( window, widget, clipRect, x-2, y-3, w+4, h+6 );
+                role = Palette::WindowText;
+
+            }
 
         } else if( GTK_IS_SCROLLBAR( widget ) ) {
 
-            GtkSensitivityType lowerOld = gtk_range_get_lower_stepper_sensitivity( GTK_RANGE(widget) );
-            GtkSensitivityType upperOld=gtk_range_get_upper_stepper_sensitivity( GTK_RANGE(widget) );
-            GtkStateType widgetState=gtk_widget_get_state(widget);
+            // use dedicated engine to get animation state
+            useWidgetStateEngine = false;
+            data = Style::instance().animations().scrollBarStateEngine().get( widget, Gtk::gdk_rectangle( x, y, w, h ), arrow, options );
             role = Palette::WindowText;
-
-            if( ( lowerOld==GTK_SENSITIVITY_AUTO || lowerOld==GTK_SENSITIVITY_ON ) && widgetState==GTK_STATE_INSENSITIVE)
-            { gtk_range_set_lower_stepper_sensitivity(GTK_RANGE(widget),GTK_SENSITIVITY_OFF); }
-
-            if( ( lowerOld==GTK_SENSITIVITY_AUTO || lowerOld==GTK_SENSITIVITY_OFF ) && widgetState!=GTK_STATE_INSENSITIVE)
-            { gtk_range_set_lower_stepper_sensitivity(GTK_RANGE(widget),GTK_SENSITIVITY_ON); }
-
-            if( ( upperOld==GTK_SENSITIVITY_AUTO || upperOld==GTK_SENSITIVITY_ON ) && widgetState==GTK_STATE_INSENSITIVE)
-            { gtk_range_set_lower_stepper_sensitivity(GTK_RANGE(widget),GTK_SENSITIVITY_OFF); }
-
-            if( ( upperOld==GTK_SENSITIVITY_AUTO || upperOld==GTK_SENSITIVITY_OFF ) && widgetState!=GTK_STATE_INSENSITIVE)
-            { gtk_range_set_upper_stepper_sensitivity(GTK_RANGE(widget),GTK_SENSITIVITY_ON); }
 
         }
 
         // render arrow
-        Style::instance().renderArrow( window, clipRect, arrow, x, y, w, h, arrowSize, options, role );
+        if( useWidgetStateEngine ) data = Style::instance().animations().widgetStateEngine().get( widget, options, AnimationHover );
+        Style::instance().renderArrow( window, clipRect, arrow, x, y, w, h, arrowSize, options, data, role );
 
     }
 
@@ -2146,40 +2534,70 @@ namespace Oxygen
         const char* detail,
         gint x,
         gint y,
-        GtkExpanderStyle expander_style )
+        GtkExpanderStyle expanderStyle )
     {
         g_return_if_fail( style && window );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=expander, state=%s, detail=%s",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ),
-            detail );
+        std::cerr
+            << "Oxygen::draw_expander -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " expander: " << Gtk::TypeNames::expanderStyle( expanderStyle )
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         StyleOptions options( widget, state );
         const Gtk::Detail d( detail );
         const Palette::Role role( d.isTreeView() ? Palette::Text : Palette::WindowText );
+
+        /*
+        TODO: For TreeViews, use dedicated engine to handle animations.
+        It should use Widget and CellInfo for tagging, and work like
+        TabWidgetState engine.
+        */
+        AnimationData data;
+        if( d.isTreeView() && GTK_IS_TREE_VIEW( widget ) )
+        {
+            GtkTreeView* treeView( GTK_TREE_VIEW( widget ) );
+            const Gtk::CellInfo cellInfo( treeView, x-3, y-4, 10, 10 );
+            data = Style::instance().animations().treeViewStateEngine().get( widget, cellInfo, options );
+        }
+
         if( Style::instance().settings().viewDrawTriangularExpander() )
         {
 
             GtkArrowType arrow;
-            const bool isExpanded( expander_style !=GTK_EXPANDER_COLLAPSED && expander_style != GTK_EXPANDER_SEMI_COLLAPSED );
+            const bool isExpanded( expanderStyle !=GTK_EXPANDER_COLLAPSED && expanderStyle != GTK_EXPANDER_SEMI_COLLAPSED );
             if( isExpanded ) arrow = GTK_ARROW_DOWN;
             else if( Gtk::gtk_widget_layout_is_reversed( widget ) ) arrow = GTK_ARROW_LEFT;
             else arrow = GTK_ARROW_RIGHT;
 
             const Gtk::Detail d( detail );
-            QtSettings::ArrowSize arrowSize = QtSettings::ArrowNormal;
-            if( d.isTreeView() ) arrowSize = Style::instance().settings().viewTriangularExpanderSize();
-            else options |= Contrast;
+            if( d.isTreeView() )
+            {
 
-            Style::instance().renderArrow( window, clipRect, arrow, x-3, y-4, 10, 10, arrowSize, options, role );
+                const QtSettings::ArrowSize arrowSize = Style::instance().settings().viewTriangularExpanderSize();
+                Style::instance().renderArrow( window, clipRect, arrow, x-3, y-4, 10, 10, arrowSize, options, data, role );
+
+            } else {
+
+                options |= Contrast;
+                const QtSettings::ArrowSize arrowSize = QtSettings::ArrowNormal;
+                const AnimationData data( Style::instance().animations().widgetStateEngine().get( widget, options, AnimationHover ) );
+                Style::instance().renderArrow( window, clipRect, arrow, x-3, y-5, 10, 10, arrowSize, options, data, role );
+
+            }
+
+        } else if( d.isTreeView() ) {
+
+            Style::instance().renderTreeExpander( window, clipRect, x-3, y-4, 10, 10, expanderStyle, options, data, role );
 
         } else {
 
-            Style::instance().renderTreeExpander( window, clipRect, x-3, y-4, 10, 10, expander_style, options, role );
+            const AnimationData data( Style::instance().animations().widgetStateEngine().get( widget, options, AnimationHover ) );
+            Style::instance().renderTreeExpander( window, clipRect, x-3, y-5, 10, 10, expanderStyle, options, data, role );
 
         }
 
@@ -2202,12 +2620,13 @@ namespace Oxygen
         Style::instance().sanitizeSize( window, w, h );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=diamond, state=%s, shadow=%s, detail=%s",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ),
-            Gtk::TypeNames::shadow( shadow ),
-            detail );
+        std::cerr
+            << "Oxygen::draw_diamond -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " shadow: " << Gtk::TypeNames::shadow( shadow )
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         StyleWrapper::parentClass()->draw_diamond( style, window, state,
@@ -2233,12 +2652,13 @@ namespace Oxygen
         Style::instance().sanitizeSize( window, w, h );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=tab, state=%s, shadow=%s, detail=%s",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ),
-            Gtk::TypeNames::shadow( shadow ),
-            detail );
+        std::cerr
+            << "Oxygen::draw_tab -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " shadow: " << Gtk::TypeNames::shadow( shadow )
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         Gtk::Detail d( detail );
@@ -2248,8 +2668,8 @@ namespace Oxygen
             // render
             GtkArrowType arrow = GTK_ARROW_DOWN;
             QtSettings::ArrowSize arrowSize = QtSettings::ArrowNormal;
-            StyleOptions options( Contrast );
-            options |= StyleOptions( widget, state, shadow );
+            StyleOptions options( widget, state, shadow );
+            options |= Contrast;
 
             // disable hover and focus
             options &= ~(Hover|Focus);
@@ -2287,12 +2707,14 @@ namespace Oxygen
         Style::instance().sanitizeSize( window, w, h );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=shadow_gap, state=%s, shadow=%s, detail=%s",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ),
-            Gtk::TypeNames::shadow( shadow ),
-            detail );
+        std::cerr
+            << "Oxygen::draw_shadow_gap -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " shadow: " << Gtk::TypeNames::shadow( shadow )
+            << " position: " << Gtk::TypeNames::position( position )
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         Gtk::Detail d( detail );
@@ -2300,9 +2722,11 @@ namespace Oxygen
         {
 
             const Gtk::Gap gap( gap_x, gap_w, position );
-            if( shadow == GTK_SHADOW_IN ) {
+            if( shadow == GTK_SHADOW_IN )
+            {
 
-                Style::instance().renderHoleBackground( window, clipRect, x-1-Style::Entry_SideMargin, y-1, w+2+2*Style::Entry_SideMargin, h+2 );
+                const int sideMargin( std::max( 0, style->xthickness - 2 ) );
+                Style::instance().renderHoleBackground( window, widget, clipRect, x-1-sideMargin, y-1, w+2+2*sideMargin, h+2, TileSet::Full, sideMargin );
                 Style::instance().renderHole( window, clipRect, x-1, y-1, w+2, h+1, gap, NoFill );
 
             } else if( shadow == GTK_SHADOW_OUT ) {
@@ -2348,27 +2772,23 @@ namespace Oxygen
         Style::instance().sanitizeSize( window, w, h );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=box_gap, state=%s, shadow=%s, detail=%s",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ),
-            Gtk::TypeNames::shadow( shadow ),
-            detail );
+        std::cerr
+            << "Oxygen::draw_box_gap -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " shadow: " << Gtk::TypeNames::shadow( shadow )
+            << " position: " << Gtk::TypeNames::position( position )
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         const Gtk::Detail d( detail );
         if( d.isNotebook() )
         {
 
-            // https://bugzilla.gnome.org/show_bug.cgi?id=635511
-            if( !Style::instance().settings().applicationName().isMozilla( widget ) &&
-                !Style::instance().settings().applicationName().isAcrobat( widget ) &&
-                !Style::instance().settings().applicationName().isOpenOffice() )
-            { Style::instance().windowManager().registerWidget( widget ); }
-
             // this might move to drawShadowGap
-            StyleOptions options( NoFill );
-            options |= StyleOptions( widget, GTK_STATE_NORMAL, shadow );
+            StyleOptions options( widget, GTK_STATE_NORMAL, shadow );
+            options |= NoFill;
             options &= ~(Hover|Focus);
 
             if( Style::instance().settings().applicationName().isMozilla( widget ) )
@@ -2460,37 +2880,49 @@ namespace Oxygen
         Style::instance().sanitizeSize( window, w, h );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=slider, state=%s, shadow=%s, detail=%s",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ),
-            Gtk::TypeNames::shadow( shadow ),
-            detail );
+        std::cerr
+            << "Oxygen::draw_slider -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " shadow: " << Gtk::TypeNames::shadow( shadow )
+            << " orientation: " << Gtk::TypeNames::orientation( orientation )
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         Gtk::Detail d( detail );
         if( d.isScale() )
         {
 
-            StyleOptions options;
+            StyleOptions options( widget, state, shadow );
+
             if(!Style::instance().settings().applicationName().useFlatBackground( widget ))
-                options |= Blend;
-            options |= StyleOptions( widget, state, shadow );
-            options &= ~Sunken;
+            { options |= Blend; }
+
             if( GTK_IS_VSCALE( widget ) ) options |= Vertical;
-            Style::instance().renderSliderHandle( window, clipRect, x, y, w, h, options );
+
+            // retrieve animation state and render accordingly
+            const AnimationData data( Style::instance().animations().widgetStateEngine().get( widget, options ) );
+            Style::instance().renderSliderHandle( window, clipRect, x, y, w, h, options, data );
+
             return;
 
         } else if( GTK_IS_VSCROLLBAR( widget ) ) {
 
-            StyleOptions options( Vertical );
-            options |= StyleOptions( widget, state, shadow );
-            Style::instance().renderScrollBarHandle( window, clipRect, x, y, w-1, h, options );
+            StyleOptions options( widget, state, shadow );
+            if( options&Sunken ) options |= Hover;
+            options |= Vertical;
+
+            const AnimationData data( Style::instance().animations().widgetStateEngine().get( widget, options, AnimationHover ) );
+            Style::instance().renderScrollBarHandle( window, clipRect, x, y, w-1, h, options, data );
 
         } else if( GTK_IS_HSCROLLBAR( widget ) ) {
 
             StyleOptions options( widget, state, shadow );
-            Style::instance().renderScrollBarHandle( window, clipRect, x, y, w, h-1, options );
+            if( options&Sunken ) options |= Hover;
+
+            const AnimationData data( Style::instance().animations().widgetStateEngine().get( widget, options, AnimationHover ) );
+            Style::instance().renderScrollBarHandle( window, clipRect, x, y, w, h-1, options, data );
 
         } else {
 
@@ -2522,13 +2954,14 @@ namespace Oxygen
         Style::instance().sanitizeSize( window, w, h );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=extension, state=%s, shadow=%s, detail=%s, position=%s",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ),
-            Gtk::TypeNames::shadow( shadow ),
-            detail,
-            Gtk::TypeNames::position( position ) );
+        std::cerr
+            << "Oxygen::draw_extension -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " shadow: " << Gtk::TypeNames::shadow( shadow )
+            << " position: " << Gtk::TypeNames::position( position )
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         Gtk::Detail d( detail );
@@ -2548,7 +2981,12 @@ namespace Oxygen
             */
             const bool isMozilla( Style::instance().settings().applicationName().isMozilla( widget ) );
             const bool isOpenOffice( Style::instance().settings().applicationName().isOpenOffice() );
-            if( GTK_IS_NOTEBOOK( widget ) && !( isMozilla || isOpenOffice ) )
+
+            // if passed window is invalid, do not hover
+            const bool disableHover( !GDK_IS_WINDOW( window ) );
+
+            AnimationData data;
+            if( GTK_IS_NOTEBOOK( widget ) && !( isMozilla || isOpenOffice || disableHover ) )
             {
 
                 // make sure widget is registered
@@ -2586,6 +3024,9 @@ namespace Oxygen
                     drawTabBarBase = (tabIndex == firstTabIndex && !isCurrentTab ) || (firstTabIndex == focusTabIndex && tabIndex == firstTabIndex+1 );
                 }
 
+                if( !isCurrentTab )
+                { data = Style::instance().animations().tabWidgetStateEngine().get( widget, tabIndex, options ); }
+
             }
 
             if( isOpenOffice )
@@ -2599,7 +3040,8 @@ namespace Oxygen
 
             // render
             if( isMozilla ) tabOptions |= Mozilla;
-            Style::instance().renderTab( window, clipRect, x, y, w, h, position, options, tabOptions );
+
+            Style::instance().renderTab( window, clipRect, x, y, w, h, position, options, tabOptions, data );
 
             // render tabbar base if current tab
             if( drawTabBarBase )
@@ -2663,11 +3105,12 @@ namespace Oxygen
         Style::instance().sanitizeSize( window, w, h );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=focus, state=%s, detail=%s",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ),
-            detail );
+        std::cerr
+            << "Oxygen::draw_focus -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         Gtk::Detail d( detail );
@@ -2703,17 +3146,21 @@ namespace Oxygen
         Style::instance().sanitizeSize( window, w, h );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=handle, state=%s, shadow=%s, detail=%s",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ),
-            Gtk::TypeNames::shadow( shadow ),
-            detail );
+        std::cerr
+            << "Oxygen::draw_handle -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " shadow: " << Gtk::TypeNames::shadow( shadow )
+            << " orientation: " << Gtk::TypeNames::orientation( orientation )
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         Gtk::Detail d( detail );
         if( d.isPaned() )
         {
+
+            Style::instance().animations().panedEngine().registerWidget( widget );
 
             StyleOptions options( widget, state, shadow );
             if( GTK_IS_VPANED( widget ) )
@@ -2727,7 +3174,8 @@ namespace Oxygen
 
             }
 
-            Style::instance().renderSplitter( window, 0L, x, y, w, h, options );
+            const AnimationData data( Style::instance().animations().widgetStateEngine().get( widget, Gtk::gdk_rectangle( x, y, w, h ), options, AnimationHover ) );
+            Style::instance().renderSplitter( window, 0L, x, y, w, h, options, data );
 
         } else if( d.isHandleBox() ) {
 
@@ -2773,11 +3221,13 @@ namespace Oxygen
         g_return_if_fail( style && window );
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=resize_grip, state=%s, detail=%s",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ),
-            detail );
+        std::cerr
+            << "Oxygen::draw_resize_grip -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " edge: " << Gtk::TypeNames::windowEdge( edge )
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         // no resize grip in oxygen no matter what
@@ -2792,14 +3242,21 @@ namespace Oxygen
         GtkStateType state,
         GtkIconSize size,
         GtkWidget* widget,
-        const char* )
+        const char* detail )
     {
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=icon, state=%s",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ));
+        const char* filename( source ? gtk_icon_source_get_filename( source ) : 0L );
+        const char* iconname( source ? gtk_icon_source_get_icon_name( source ) : 0L );
+        std::cerr
+            << "Oxygen::render_icon -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " file name: " << (filename ? filename:"0x0")
+            << " icon name: " << (iconname ? iconname:"0x0")
+            << " icon size: " << Gtk::TypeNames::iconSize( size )
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         GdkPixbuf* base_pixbuf( gtk_icon_source_get_pixbuf( source ) );
@@ -2897,11 +3354,12 @@ namespace Oxygen
     {
 
         #if OXYGEN_DEBUG
-        g_log( OXYGEN_LOG_DOMAIN, G_LOG_LEVEL_INFO,
-            "widget=%s, primitive=layout, state=%s, detail=%s",
-            G_OBJECT_TYPE_NAME( widget ),
-            Gtk::TypeNames::state( state ),
-            detail );
+        std::cerr
+            << "Oxygen::draw_layout -"
+            << " widget: " << widget << " (" << (widget ? G_OBJECT_TYPE_NAME( widget ):"0x0") << ")"
+            << " state: " << Gtk::TypeNames::state( state )
+            << " detail: " << (detail ? detail:"0x0" )
+            << std::endl;
         #endif
 
         const Gtk::Detail d(detail);
@@ -2958,8 +3416,13 @@ namespace Oxygen
     void StyleWrapper::instanceInit( OxygenStyle* self )
     {
 
-        // initialize window manager hook
+        // hooks
+        Style::instance().animations().initializeHooks();
         Style::instance().windowManager().initializeHooks();
+        Style::instance().shadowHelper().initializeHooks();
+
+        // also initialize dbus
+        Oxygen::DBus::instance();
 
         // initialize argb hooks
         if(

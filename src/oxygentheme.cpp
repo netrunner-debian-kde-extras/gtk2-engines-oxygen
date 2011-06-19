@@ -22,11 +22,14 @@
 * MA 02110-1301, USA.
 */
 
+#include "oxygentheme.h"
+
 #include "config.h"
 #include "oxygenrcstyle.h"
 #include "oxygenstyle.h"
 #include "oxygenstylewrapper.h"
 #include "oxygenwindecooptions.h"
+#include "oxygenwindowshadow.h"
 
 #include <gmodule.h>
 #include <gtk/gtk.h>
@@ -38,32 +41,30 @@
 #include <sys/stat.h>
 
 //_________________________________________________
-extern "C" G_MODULE_EXPORT void theme_init( GTypeModule* );
-extern "C" G_MODULE_EXPORT void theme_exit( void );
-extern "C" G_MODULE_EXPORT GtkRcStyle* theme_create_rc_style( void );
-extern "C" G_MODULE_EXPORT const gchar* g_module_check_init( GModule* );
-
-// exports for WM theming
-extern "C" G_MODULE_EXPORT void drawWindowDecoration(cairo_t*, unsigned long,gint,gint,gint,gint);
-extern "C" G_MODULE_EXPORT void drawWindecoButton(cairo_t*, unsigned long,unsigned long, unsigned long,gint,gint,gint,gint);
-extern "C" G_MODULE_EXPORT void drawWindecoShapeMask(cairo_t*, unsigned long,gint,gint,gint,gint);
-
-//_________________________________________________
 void theme_init( GTypeModule* module )
 {
+
     Oxygen::RCStyle::registerType( module );
     Oxygen::StyleWrapper::registerType( module );
 
-    // initialize ref surface
-    Oxygen::Style::instance().helper().initializeRefSurface();
-
-    if( Oxygen::Style::instance().settings().applicationName().isOpenOffice() )
+    if( Oxygen::Style::instance().settings().applicationName().isOpenOffice() ||
+        Oxygen::Style::instance().settings().applicationName().isKomodo() )
     { Oxygen::Style::instance().animations().setEnabled( false ); }
+
 }
 
 //_________________________________________________
 void theme_exit( void )
-{}
+{
+
+    #if OXYGEN_DEBUG
+    std::cerr << "Oxygen::theme_exit" << std::endl;
+    #endif
+
+    // delete style instance
+    delete &Oxygen::Style::instance();
+
+}
 
 //_________________________________________________
 GtkRcStyle* theme_create_rc_style( void )
@@ -79,9 +80,9 @@ const gchar* g_module_check_init( GModule *module )
 }
 
 //_________________________________________________
-void drawWindowDecoration(cairo_t* context, unsigned long options, gint x,gint y,gint w,gint h)
+void drawWindowDecoration(cairo_t* context, unsigned long options, gint x,gint y,gint w,gint h, const gchar** ws, gint til, gint tir)
 {
-    Oxygen::Style::instance().drawWindowDecoration( context, (Oxygen::WinDeco::Options) options, x, y, w, h);
+    Oxygen::Style::instance().drawWindowDecoration( context, (Oxygen::WinDeco::Options) options, x, y, w, h, ws, til, tir);
 }
 
 //_________________________________________________
@@ -97,3 +98,28 @@ void drawWindecoShapeMask(cairo_t* context, unsigned long options, gint x,gint y
 {
     Oxygen::Style::instance().drawWindecoShapeMask( context, (Oxygen::WinDeco::Options) options, x, y, w, h);
 }
+
+//_________________________________________________
+void drawWindowShadow(cairo_t* context, unsigned long options, gint x, gint y, gint w, gint h)
+{
+    Oxygen::Style::instance().drawWindowShadow(context,(Oxygen::WinDeco::Options) options, x, y, w, h);
+}
+
+//_________________________________________________
+gint getWindecoMetric(unsigned long wm)
+{
+    return Oxygen::WinDeco::getMetric((Oxygen::WinDeco::Metric)wm);
+}
+
+//_________________________________________________
+gint getWindecoButtonSize(unsigned long buttonType)
+{
+    return Oxygen::WinDeco::getButtonSize();
+}
+
+//_________________________________________________
+unsigned long getWindecoABIVersion(void)
+{
+    return 0x3;
+}
+
