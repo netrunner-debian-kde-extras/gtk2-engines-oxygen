@@ -1,3 +1,9 @@
+gtk2-engines-oxygen (1.1.0-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Fathi Boudra <fabo@debian.org>  Sun, 19 Jun 2011 22:00:43 +0300
+
 gtk2-engines-oxygen (1.0.5-1) unstable; urgency=low
 
   * New upstream version.
