@@ -23,6 +23,8 @@
 #include "../oxygengtkutils.h"
 #include "../config.h"
 
+#include <string>
+
 namespace Oxygen
 {
     //_________________________________________________________
@@ -88,6 +90,6 @@ namespace Oxygen
         // call base class
         BaseEngine::registerWidget( widget );
         return true;
-    }
 
+    }
 }

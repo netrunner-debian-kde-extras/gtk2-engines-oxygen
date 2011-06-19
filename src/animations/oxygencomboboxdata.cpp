@@ -36,8 +36,15 @@ namespace Oxygen
         std::cerr << "Oxygen::ComboBoxData::connect - widget: " << widget << std::endl;
         #endif
 
+        // set pointers to widgets
         _target = widget;
+        _list = 0L;
+
+        // connect signals
         _stateChangeId.connect( G_OBJECT(widget), "state-changed", G_CALLBACK( stateChangeEvent ), this );
+        _styleSetId.connect( G_OBJECT(widget), "style-set", G_CALLBACK( styleSetEvent ), this );
+
+        // initialize cell view
         initializeCellView( widget );
 
         /*
@@ -56,8 +63,12 @@ namespace Oxygen
         #endif
 
         _stateChangeId.disconnect();
+        _styleSetId.disconnect();
 
+        // clear pointers to widgets
         _target = 0L;
+        _list = 0L;
+
         _button.disconnect();
         _cell.disconnect();
 
@@ -102,7 +113,6 @@ namespace Oxygen
 
             _cell._widget = GTK_WIDGET( child->data );
             _cell._destroyId.connect( G_OBJECT(widget), "destroy", G_CALLBACK( childDestroyNotifyEvent ), this );
-            _cell._styleChangeId.connect( G_OBJECT(widget), "style-set", G_CALLBACK( childStyleChangeNotifyEvent ), this );
 
             updateCellViewColor();
 
@@ -194,7 +204,6 @@ namespace Oxygen
             HoverData data;
             data._widget = widget;
             data._destroyId.connect( G_OBJECT(widget), "destroy", G_CALLBACK( childDestroyNotifyEvent ), this );
-            data._styleChangeId.connect( G_OBJECT(widget), "style-set", G_CALLBACK( childStyleChangeNotifyEvent ), this );
             data._enterId.connect( G_OBJECT(widget), "enter-notify-event", G_CALLBACK( enterNotifyEvent ), this );
             data._leaveId.connect( G_OBJECT(widget), "leave-notify-event", G_CALLBACK( leaveNotifyEvent ), this );
 
@@ -236,10 +245,11 @@ namespace Oxygen
 
         // loopup in hover map
         HoverDataMap::iterator iter( _hoverData.find( widget ) );
-        if( iter == _hoverData.end() ) return;
-
-        iter->second.disconnect();
-        _hoverData.erase( iter );
+        if( iter != _hoverData.end() )
+        {
+            iter->second.disconnect();
+            _hoverData.erase( iter );
+        }
 
     }
 
@@ -257,7 +267,6 @@ namespace Oxygen
         #endif
 
         _destroyId.disconnect();
-        _styleChangeId.disconnect();
         _widget = 0L;
     }
 
@@ -307,10 +316,6 @@ namespace Oxygen
     }
 
     //____________________________________________________________________________________________
-    void ComboBoxData::childStyleChangeNotifyEvent( GtkWidget* widget, GtkStyle*, gpointer data )
-    { static_cast<ComboBoxData*>(data)->unregisterChild( widget ); }
-
-    //____________________________________________________________________________________________
     void ComboBoxData::childToggledEvent( GtkWidget* widget, gpointer data)
     {
         if( GTK_IS_TOGGLE_BUTTON( widget ) )
@@ -356,6 +361,10 @@ namespace Oxygen
 
     //________________________________________________________________________________
     void ComboBoxData::stateChangeEvent( GtkWidget*, GtkStateType, gpointer data )
+    { static_cast<ComboBoxData*>( data )->updateCellViewColor(); }
+
+    //________________________________________________________________________________
+    void ComboBoxData::styleSetEvent( GtkWidget*, GtkStyle*, gpointer data )
     { static_cast<ComboBoxData*>( data )->updateCellViewColor(); }
 
 }

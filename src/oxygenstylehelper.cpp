@@ -26,6 +26,7 @@
 
 #include <cmath>
 #include <gdk/gdk.h>
+#include <gdk/gdkx.h>
 
 namespace Oxygen
 {
@@ -50,22 +51,21 @@ namespace Oxygen
         create dummy widget, check its associated screen;
         if found create surface for it and save as reference surface
         */
-        GtkWidget* widget( gtk_window_new(GTK_WINDOW_TOPLEVEL) );
-        if( gtk_widget_get_screen( widget ) )
+        GdkScreen* screen( gdk_screen_get_default() );
+        GdkWindow* window( screen ? gdk_screen_get_root_window( screen ):0x0 );
+        if( screen && window )
         {
 
             #if OXYGEN_DEBUG
             std::cerr
                 << "Oxygen::StyleHelper::initializeRefSurface - "
-                << " widget: " << widget
-                << " screen: " << gtk_widget_get_screen( widget )
+                << " screen: " << screen
+                << " window: " << window
                 << std::endl;
             #endif
 
-            gtk_widget_realize( widget );
-            Cairo::Context context( gtk_widget_get_window( widget ) );
+            Cairo::Context context( window );
             _refSurface = Cairo::Surface( cairo_surface_create_similar( cairo_get_target( context ), CAIRO_CONTENT_ALPHA, 1, 1 ) );
-            gtk_widget_destroy( widget );
 
         } else {
 
@@ -82,7 +82,6 @@ namespace Oxygen
                 << std::endl;
             #endif
 
-            gtk_widget_destroy( widget );
             _refSurface.set( cairo_image_surface_create( CAIRO_FORMAT_ARGB32, 1, 1 ) );
 
         }
@@ -116,12 +115,12 @@ namespace Oxygen
         const SeparatorKey key( base, vertical, size );
 
         // try find in cache and return
-        if( const Cairo::Surface& surface = m_separatorCache.value(key) )
+        if( const Cairo::Surface& surface = _separatorCache.value(key) )
         { return surface; }
 
         // for invalid sizes return a null surface
         if( size <= 0 )
-        { return m_separatorCache.insert( key, 0L ); }
+        { return _separatorCache.insert( key, 0L ); }
 
         // cached not found, create new
         Cairo::Surface surface( vertical ? createSurface( 3, size ):createSurface( size, 2 ) );
@@ -196,7 +195,7 @@ namespace Oxygen
 
         // note: we can't return the surface directly, because it is a temporary
         // we have to return the inserted object instead
-        return m_separatorCache.insert( key, surface );
+        return _separatorCache.insert( key, surface );
 
     }
 
@@ -207,7 +206,7 @@ namespace Oxygen
         const WindecoButtonKey key( base, size, pressed );
 
         // try find in cache and return
-        if( const Cairo::Surface& surface = m_windecoButtonCache.value(key) )
+        if( const Cairo::Surface& surface = _windecoButtonCache.value(key) )
         { return surface; }
 
         // cached not found, create new
@@ -256,7 +255,7 @@ namespace Oxygen
 
         // note: we can't return the surface directly, because it is a temporary
         // we have to return the inserted object instead
-        return m_windecoButtonCache.insert( key, surface );
+        return _windecoButtonCache.insert( key, surface );
 
     }
 
@@ -267,7 +266,7 @@ namespace Oxygen
         const WindecoButtonGlowKey key( base, size );
 
         // try find in cache and return
-        if( const Cairo::Surface& surface = m_windecoButtonGlowCache.value(key) )
+        if( const Cairo::Surface& surface = _windecoButtonGlowCache.value(key) )
         { return surface; }
 
         // cached not found, create new
@@ -316,7 +315,7 @@ namespace Oxygen
 
         // note: we can't return the surface directly, because it is a temporary
         // we have to return the inserted object instead
-        return m_windecoButtonGlowCache.insert( key, surface );
+        return _windecoButtonGlowCache.insert( key, surface );
 
     }
 
@@ -327,7 +326,7 @@ namespace Oxygen
         const VerticalGradientKey key( base, height );
 
         // try find in cache and return
-        if( const Cairo::Surface& surface = m_verticalGradientCache.value(key) )
+        if( const Cairo::Surface& surface = _verticalGradientCache.value(key) )
         { return surface; }
 
         // cached not found, create new
@@ -347,7 +346,7 @@ namespace Oxygen
             cairo_fill( context );
         }
 
-        return m_verticalGradientCache.insert( key, surface );
+        return _verticalGradientCache.insert( key, surface );
     }
 
     //_________________________________________________
@@ -357,7 +356,7 @@ namespace Oxygen
         const RadialGradientKey key( base, radius );
 
         // try find in cache and return
-        if( const Cairo::Surface& surface = m_radialGradientCache.value(key) )
+        if( const Cairo::Surface& surface = _radialGradientCache.value(key) )
         { return surface; }
 
         // cached not found, create new
@@ -378,51 +377,16 @@ namespace Oxygen
             cairo_fill( context );
         }
 
-        return m_radialGradientCache.insert( key, surface );
+        return _radialGradientCache.insert( key, surface );
 
     }
 
     //_________________________________________________
-    const TileSet& StyleHelper::slab(const ColorUtils::Rgba& base, double shade, int size)
+    const TileSet& StyleHelper::slab(const ColorUtils::Rgba& base, const ColorUtils::Rgba& glow, double shade, int size)
     {
 
-        const SlabKey key( base, shade, size );
-        const TileSet& tileSet( m_slabCache.value( key ) );
-        if( tileSet.isValid() ) return tileSet;
-
-        // create surface and initialize
-        const int w( 2*size );
-        const int h( 2*size );
-        Cairo::Surface surface( createSurface( w, h ) );
-
-        {
-
-            // create cairo context
-            Cairo::Context context( surface );
-            cairo_scale( context, double(size)/7, double(size)/7 );
-            cairo_rectangle( context, 0, 0, 14, 14 );
-            cairo_set_source( context, ColorUtils::Rgba::transparent( base ) );
-            cairo_fill( context );
-
-            if( base.isValid() )
-            {
-                drawShadow( context, ColorUtils::shadowColor( base ), 14 );
-                drawSlab( context, base, shade );
-            }
-
-        }
-
-        // create tileSet
-        return m_slabCache.insert( key, TileSet( surface,  size, size, size, size, size-1, size, 2, 1 ) );
-
-    }
-
-    //_________________________________________________
-    const TileSet& StyleHelper::slabFocused(const ColorUtils::Rgba& base, const ColorUtils::Rgba& glow, double shade, int size)
-    {
-
-        const SlabFocusedKey key( base, glow, shade, size );
-        const TileSet& tileSet( m_slabFocusedCache.value( key ) );
+        const SlabKey key( base, glow, shade, size );
+        const TileSet& tileSet( _slabCache.value( key ) );
         if( tileSet.isValid() ) return tileSet;
 
         // create surface and initialize
@@ -445,16 +409,16 @@ namespace Oxygen
         }
 
         // create tileSet
-        return m_slabFocusedCache.insert( key, TileSet( surface,  size, size, size, size, size-1, size, 2, 1) );
+        return _slabCache.insert( key, TileSet( surface,  size, size, size, size, size-1, size, 2, 1) );
 
     }
 
     //__________________________________________________________________
-    const TileSet& StyleHelper::slabSunken( const ColorUtils::Rgba& base, double shade, int size )
+    const TileSet& StyleHelper::slabSunken( const ColorUtils::Rgba& base, int size )
     {
 
-        const SlabKey key( base, shade, size );
-        const TileSet& tileSet( m_slabSunkenCache.value( key ) );
+        const SlabKey key( base, 0.0, size );
+        const TileSet& tileSet( _slabSunkenCache.value( key ) );
         if( tileSet.isValid() ) return tileSet;
 
         // create surface and initialize
@@ -466,6 +430,7 @@ namespace Oxygen
 
             // create cairo context
             Cairo::Context context( surface );
+            cairo_set_line_width( context, 1.0 );
             cairo_scale( context, double(size)/7, double(size)/7 );
             cairo_rectangle( context, 0, 0, 14, 14 );
             cairo_set_source( context, ColorUtils::Rgba::transparent( base ) );
@@ -473,57 +438,36 @@ namespace Oxygen
 
             if( base.isValid() )
             {
-                drawSlab( context, base, shade );
                 drawInverseShadow( context, ColorUtils::shadowColor(base), 3, 8, 0.0);
+
+                // contrast
+                {
+                    const ColorUtils::Rgba light( ColorUtils::lightColor( base ) );
+                    Cairo::Pattern pattern( cairo_pattern_create_linear( 0, 2, 0, 16 ) );
+                    cairo_pattern_add_color_stop( pattern, 0.5, ColorUtils::Rgba::transparent( light ) );
+                    cairo_pattern_add_color_stop( pattern, 1.0, light );
+                    cairo_set_source( context, pattern );
+                    cairo_rounded_rectangle( context, 2.5, 2.5, 9, 9, 4.0 );
+                    cairo_stroke( context );
+                }
+
             }
 
         }
 
         // create tileSet
-        return m_slabSunkenCache.insert( key, TileSet( surface,  size, size, size, size, size-1, size, 2, 1) );
+        return _slabSunkenCache.insert( key, TileSet( surface,  size, size, size, size, size-1, size, 2, 1) );
 
     }
 
     //______________________________________________________________________________
-    const Cairo::Surface& StyleHelper::roundSlab( const ColorUtils::Rgba& base, double shade, int size )
+    const Cairo::Surface& StyleHelper::roundSlab(const ColorUtils::Rgba& base, const ColorUtils::Rgba& glow, double shade, int size)
     {
 
-        const SlabKey key( base, shade, size );
+        SlabKey key( base, glow, shade, size );
 
         // try find in cache and return
-        if( const Cairo::Surface& surface = m_roundSlabCache.value( key ) )
-        { return surface; }
-
-        // cached not found, create new
-        const int w( 3*size );
-        const int h( 3*size );
-        Cairo::Surface surface( createSurface( w, h ) );
-
-        // create cairo context
-        Cairo::Context context( surface );
-        cairo_scale( context, double(size)/7, double(size)/7 );
-
-        // shadow
-        if( base.isValid() )
-        {
-            drawShadow( context, ColorUtils::shadowColor(base), 21 );
-            drawRoundSlab( context, base, shade );
-        }
-
-        // note: we can't return the surface directly, because it is a temporary
-        // we have to return the inserted object instead
-        return m_roundSlabCache.insert( key, surface );
-
-    }
-
-    //__________________________________________________________________________________________________________
-    const Cairo::Surface& StyleHelper::roundSlabFocused(const ColorUtils::Rgba& base, const ColorUtils::Rgba& glow, double shade, int size)
-    {
-
-        SlabFocusedKey key( base, glow, shade, size );
-
-        // try find in cache and return
-        if( const Cairo::Surface& surface = m_roundSlabFocusedCache.value( key ) )
+        if( const Cairo::Surface& surface = _roundSlabCache.value( key ) )
         { return surface; }
 
         // cached not found, create new
@@ -542,12 +486,72 @@ namespace Oxygen
 
         // note: we can't return the surface directly, because it is a temporary
         // we have to return the inserted object instead
-        return m_roundSlabFocusedCache.insert( key, surface );
+        return _roundSlabCache.insert( key, surface );
+
+    }
+
+
+    //__________________________________________________________________________________________________________
+    const Cairo::Surface&  StyleHelper::sliderSlab(const ColorUtils::Rgba& base, const ColorUtils::Rgba& glow, bool sunken, double shade, int size)
+    {
+
+        SliderSlabKey key( base, glow, sunken, shade, size );
+
+        // try find in cache and return
+        if( const Cairo::Surface& surface = _sliderSlabCache.value( key ) )
+        { return surface; }
+
+        // cached not found, create new
+        const int w( 3*size );
+        const int h( 3*size );
+        Cairo::Surface surface( createSurface( w, h ) );
+
+        {
+            Cairo::Context context( surface );
+
+            cairo_save( context );
+            cairo_scale( context, double( 3*size )/23, double( 3*size )/23 );
+            cairo_translate( context, 1, 1 );
+
+            if( base.isValid() ) drawShadow( context, ColorUtils::alphaColor( ColorUtils::shadowColor(base), 0.8 ), 21 );
+            if( glow.isValid() ) drawOuterGlow( context, glow, 21 );
+            cairo_restore( context );
+
+            cairo_scale( context, double( 3*size )/25, double( 3*size )/25 );
+            cairo_translate( context, 2, 2 );
+            drawSliderSlab( context, base, sunken, shade );
+
+        }
+
+        return _sliderSlabCache.insert( key, surface );
+
+    }
+
+    //________________________________________________________________________________________________________
+    const TileSet &StyleHelper::slope( const ColorUtils::Rgba& base, double shade, int size )
+    {
+
+        const SlabKey key( base, shade, size );
+        const TileSet& tileSet( _slopeCache.value( key ) );
+        if( tileSet.isValid() ) return tileSet;
+
+        const int w( 4*size );
+        const int h( 4*size );
+        Cairo::Surface surface( createSurface( w, h ) );
+
+        {
+            Cairo::Context context( surface );
+            const TileSet &slabTileSet = slab( base, shade, size );
+            slabTileSet.render( context, 0, 0, size*4, size*5, TileSet::Left | TileSet::Right | TileSet::Top );
+
+        }
+
+        return _slopeCache.insert( key, TileSet( surface,  size, size, size, size, size-1, size, 2, 1) );
 
     }
 
     //__________________________________________________________________
-    void StyleHelper::fillSlab( Cairo::Context& context, int x, int y, int w, int h, const TileSet::Tiles& tiles ) const
+    void StyleHelper::fillSlab( cairo_t* context, int x, int y, int w, int h, const TileSet::Tiles& tiles ) const
     {
 
         const double s( 3.6 + ( 0.5 * _slabThickness )  );
@@ -598,116 +602,181 @@ namespace Oxygen
 
     }
 
-    //________________________________________________________________________________________________________
-    const TileSet& StyleHelper::hole( const ColorUtils::Rgba &base, const ColorUtils::Rgba& fill, double shade, int size )
+
+    //______________________________________________________________________________
+    const TileSet& StyleHelper::holeFocused(
+        const ColorUtils::Rgba &base, const ColorUtils::Rgba &fill, const ColorUtils::Rgba &glow,
+        int size, bool contrast )
     {
 
-        const HoleKey key( base, fill, shade, size );
-        const TileSet& tileSet( m_holeCache.value( key ) );
+        const HoleFocusedKey key( base, fill, glow, size, contrast );
+        const TileSet& tileSet( _holeFocusedCache.value( key ) );
         if( tileSet.isValid() ) return tileSet;
 
-        // create pixbuf and initialize
-        const int rsize( (int)ceil(double(size) * 5.0/7.0 ) );
-        const int w( 2*rsize );
-        const int h( 2*rsize );
-        Cairo::Surface surface( createSurface( w, h ) );
+        // first create shadow
+        const int shadowSize( (size*5)/7 );
+        Cairo::Surface shadowSurface( createSurface( 2*shadowSize, 2*shadowSize ) );
 
+        {
+            Cairo::Context context( shadowSurface );
+            cairo_scale( context, 5.0/shadowSize, 5.0/shadowSize );
+
+            // get alpha channel
+            double alpha( glow.isValid() ? glow.alpha() : 0 );
+            if( alpha < 1 )
+            {
+
+                // shadow
+                drawInverseShadow( context, ColorUtils::alphaColor( ColorUtils::shadowColor( base ), 1.0 - alpha ), 1, 8, 0.0);
+
+            }
+
+            if( alpha > 0 )
+            {
+
+                // glow
+                drawInverseGlow( context, glow, 1, 8, shadowSize );
+
+            }
+
+        }
+
+        // create surface
+        Cairo::Surface surface( createSurface( 2*size, 2*size ) );
         {
 
             Cairo::Context context( surface );
-            cairo_translate( context, -2, -2 );
-            cairo_scale( context, 10.0/w, 10.0/h );
+            cairo_scale( context, 7.0/size, 7.0/size );
+            cairo_set_line_width( context, 1 );
 
             // inside
             if( fill.isValid() )
             {
-                cairo_ellipse( context, 4, 3, 6, 7 );
+                cairo_rounded_rectangle( context, 1, 1, 12, 12, 2.5 );
                 cairo_set_source( context, fill );
                 cairo_fill( context );
             }
 
-            // shadow
-            drawInverseShadow( context, ColorUtils::shadowColor( base ), 3, 8, 0.0);
+            // draw shadow
+            TileSet(
+                shadowSurface, shadowSize, shadowSize, shadowSize, shadowSize,
+                shadowSize-1, shadowSize, 2, 1 ).
+                render( context, 0, 0, size*2, size*2 );
+
+            // contrast pixel
+            if( contrast )
+            {
+                const ColorUtils::Rgba light( ColorUtils::lightColor( base ) );
+                Cairo::Pattern pattern( cairo_pattern_create_linear( 0, 0, 0, 18 ) );
+                cairo_pattern_add_color_stop( pattern, 0.5, ColorUtils::Rgba::transparent( light ) );
+                cairo_pattern_add_color_stop( pattern, 1.0, light );
+                cairo_set_source( context, pattern );
+                cairo_rounded_rectangle( context, 0.5, 0.5, 13, 13, 4.0 );
+                cairo_stroke( context );
+
+            }
 
         }
 
-        return m_holeCache.insert( key, TileSet( surface, rsize, rsize, rsize, rsize, rsize-1, rsize, 2, 1 ) );
-    }
-
-    //______________________________________________________________________________
-    const TileSet& StyleHelper::holeFocused( const ColorUtils::Rgba &base, const ColorUtils::Rgba &fill, const ColorUtils::Rgba &glow, double shade, int size )
-    {
-
-        const HoleFocusedKey key( base, fill, glow, shade, size );
-        const TileSet& tileSet( m_holeFocusedCache.value( key ) );
-        if( tileSet.isValid() ) return tileSet;
-
-        // create surface and initialize
-        const int rsize( (int)ceil(double(size) * 5.0/7.0 ) );
-        const int w( 2*rsize );
-        const int h( 2*rsize );
-
-        Cairo::Surface surface( createSurface( w, h ) );
-        {
-
-            Cairo::Context context( surface );
-            const TileSet& holeTileSet = hole( base, fill, shade, size );
-
-            // hole
-            holeTileSet.render( context, 0, 0, w, h );
-
-            // glow
-            cairo_translate( context, -2, -2 );
-            cairo_scale( context, 10.0/w, 10.0/h );
-
-            drawInverseGlow( context, glow, 3, 8, size );
-
-        }
-
-        return m_holeFocusedCache.insert( key, TileSet( surface, rsize, rsize, rsize, rsize, rsize-1, rsize, 2, 1 ) );
+        return _holeFocusedCache.insert( key, TileSet( surface, size, size, size, size, size-1, size, 2, 1 ) );
 
     }
 
     //________________________________________________________________________________________________________
-    const TileSet& StyleHelper::holeFlat( const ColorUtils::Rgba& base, double shade, int size )
+    const TileSet& StyleHelper::holeFlat( const ColorUtils::Rgba& base, double shade, bool fill, int size )
     {
 
-        const HoleFlatKey key( base, shade, size );
-        const TileSet& tileSet( m_holeFlatCache.value( key ) );
+        const HoleFlatKey key( base, shade, fill, size );
+        const TileSet& tileSet( _holeFlatCache.value( key ) );
         if( tileSet.isValid() ) return tileSet;
 
-        const int rsize( ( int )ceil( double( size ) * 5.0/7.0 ) );
-        const int w( 2*rsize );
-        const int h( 2*rsize );
+        const int w( 2*size );
+        const int h( 2*size );
 
         Cairo::Surface surface( createSurface( w, h ) );
 
+        if( fill )
         {
 
             Cairo::Context context( surface );
-            cairo_translate( context, -2, -2 );
-            cairo_scale( context, 10.0/w, 10.0/h );
+            cairo_set_line_width( context, 1.0 );
 
-            // hole
-            drawHole( context, base, shade, 7 );
+            cairo_scale( context, 14.0/w, 14.0/h );
 
             // hole inside
             cairo_set_source( context, base );
-            cairo_ellipse( context, 3.4, 3.4, 7.2, 7.2 );
+            cairo_rounded_rectangle( context, 1, 0, 12, 13, 3.0 );
             cairo_fill( context );
+
+            {
+                // shadow (top)
+                const ColorUtils::Rgba dark( ColorUtils::shade( ColorUtils::darkColor( base ), shade ) );
+                Cairo::Pattern pattern( cairo_pattern_create_linear( 0, -2, 0, 14 ) );
+                cairo_pattern_add_color_stop( pattern, 0, dark );
+                cairo_pattern_add_color_stop( pattern, 0.4, ColorUtils::Rgba::transparent( dark ) );
+                cairo_set_source( context, pattern );
+                cairo_rounded_rectangle( context, 1.5, 0.5, 11, 12, 2.5 );
+                cairo_stroke( context );
+            }
+
+            {
+                // contrast (bottom)
+                const ColorUtils::Rgba light( ColorUtils::shade( ColorUtils::lightColor( base ), shade ) );
+                Cairo::Pattern pattern( cairo_pattern_create_linear( 0, 0, 0, 18 ) );
+                cairo_pattern_add_color_stop( pattern, 0.5, ColorUtils::Rgba::transparent( light ) );
+                cairo_pattern_add_color_stop( pattern, 1.0, light );
+                cairo_set_source( context, pattern );
+                cairo_rounded_rectangle( context, 0.5, 0.5, 13, 13, 3.5 );
+                cairo_stroke( context );
+            }
+
+        } else {
+
+            Cairo::Context context( surface );
+            cairo_set_line_width( context, 1.0 );
+
+            cairo_scale( context, 14.0/w, 14.0/h );
+
+            // hole inside
+            cairo_set_source( context, base );
+            cairo_rounded_rectangle( context, 1, 1, 12, 12, 3.0 );
+            cairo_fill( context );
+
+            {
+                // shadow (top)
+                const ColorUtils::Rgba dark( ColorUtils::shade( ColorUtils::darkColor( base ), shade ) );
+                Cairo::Pattern pattern( cairo_pattern_create_linear( 0, 1, 0, 12 ) );
+                cairo_pattern_add_color_stop( pattern, 0, dark );
+                cairo_pattern_add_color_stop( pattern, 0.4, ColorUtils::Rgba::transparent( dark ) );
+                cairo_set_source( context, pattern );
+                cairo_rounded_rectangle( context, 1.5, 1.5, 11, 11, 2.5 );
+                cairo_stroke( context );
+            }
+
+            {
+                // contrast (bottom)
+                const ColorUtils::Rgba light( ColorUtils::shade( ColorUtils::lightColor( base ), shade ) );
+                Cairo::Pattern pattern( cairo_pattern_create_linear( 0, 1, 0, 12 ) );
+                cairo_pattern_add_color_stop( pattern, 0.5, ColorUtils::Rgba::transparent( light ) );
+                cairo_pattern_add_color_stop( pattern, 1.0, light );
+                cairo_set_source( context, pattern );
+                cairo_rounded_rectangle( context, 1.5, 1.5, 11, 11, 2.5 );
+                cairo_stroke( context );
+            }
+
 
         }
 
-        return m_holeFlatCache.insert( key, TileSet( surface, rsize, rsize, rsize, rsize, rsize-1, rsize, 2, 1 ) );
+        return _holeFlatCache.insert( key, TileSet( surface, size, size, size, size, size-1, size, 2, 1 ) );
 
     }
 
     //______________________________________________________________________________
-    const TileSet& StyleHelper::scrollHole( const ColorUtils::Rgba& base, bool vertical )
+    const TileSet& StyleHelper::scrollHole( const ColorUtils::Rgba& base, bool vertical, bool smallShadow )
     {
 
-        const ScrollHoleKey key( base, vertical );
-        const TileSet& tileSet( m_scrollHoleCache.value( key ) );
+        const ScrollHoleKey key( base, vertical, smallShadow );
+        const TileSet& tileSet( _scrollHoleCache.value( key ) );
         if( tileSet.isValid() ) return tileSet;
 
         // define colors
@@ -720,82 +789,134 @@ namespace Oxygen
         const int h( 15 );
         Cairo::Surface surface( createSurface( w, h ) );
 
-        Cairo::Context context( surface );
-
-        GdkRectangle r = { 0, 0, w, h };
-        GdkRectangle rect = { 1, 0, w-2, h-1 };
-
-        const int shadowWidth( vertical ? 2:3 );
-
-        // base
         {
-            cairo_set_source( context, dark );
-            gdk_cairo_rounded_rectangle( context, &rect, 4.5 );
-            cairo_fill( context );
+            Cairo::Context context( surface );
+
+            GdkRectangle r = { 0, 0, w, h };
+            GdkRectangle rect = { 1, 0, w-2, h-1 };
+
+            // radius
+            const double radius( smallShadow ? 2.5:3.0 );
+
+            // base
+            {
+                cairo_set_source( context, dark );
+                gdk_cairo_rounded_rectangle( context, &rect, radius );
+                cairo_fill( context );
+            }
+
+            // light shadow across the whole hole
+            {
+                Cairo::Pattern pattern;
+                if( vertical ) pattern.set( cairo_pattern_create_linear( rect.x, 0, rect.x + rect.width, 0 ) );
+                else pattern.set( cairo_pattern_create_linear( 0, rect.y, 0, rect.y + rect.height ) );
+                cairo_pattern_add_color_stop( pattern, 0, ColorUtils::alphaColor( shadow, 0.1 ) );
+                cairo_pattern_add_color_stop( pattern, 0.6, ColorUtils::Rgba::transparent( shadow ) );
+
+                cairo_set_source( context, pattern );
+                gdk_cairo_rounded_rectangle( context, &rect, radius );
+                cairo_fill( context );
+            }
+
+            // first create shadow
+            const int shadowSize( 5 );
+            Cairo::Surface shadowSurface( createSurface( 2*shadowSize, 2*shadowSize ) );
+            {
+                Cairo::Context context( shadowSurface );
+                drawInverseShadow( context, ColorUtils::shadowColor( base ), 1, 8, 0.0);
+            }
+
+            // draw shadow
+            TileSet(
+                shadowSurface, shadowSize, shadowSize, shadowSize, shadowSize,
+                shadowSize-1, shadowSize, 2, 1 ).
+                render( context, 0, -1, w, h+1, TileSet::Full );
+
+            // light bottom border
+            {
+                Cairo::Pattern pattern( cairo_pattern_create_linear( 0, r.y, 0, r.y + r.height ) );
+
+                if( smallShadow && vertical )
+                {
+
+                    cairo_pattern_add_color_stop( pattern, 0.8, ColorUtils::Rgba::transparent( light ) );
+                    cairo_pattern_add_color_stop( pattern, 1, ColorUtils::alphaColor( light, 0.5 ) );
+
+                } else {
+
+                    cairo_pattern_add_color_stop( pattern, 0.5, ColorUtils::Rgba::transparent( light ) );
+                    cairo_pattern_add_color_stop( pattern, 1, ColorUtils::alphaColor( light, 0.6 ) );
+
+                }
+
+                cairo_set_source( context, pattern );
+                cairo_set_line_width( context, 1.0 );
+                cairo_rounded_rectangle( context, 0.5+r.x, 0.5+r.y, r.width-1, r.height-1, radius+0.5 );
+                cairo_stroke( context );
+            }
+
         }
 
-        // light shadow across the whole hole
-        {
-            Cairo::Pattern pattern;
-            if( vertical ) pattern.set( cairo_pattern_create_linear( rect.x, 0, rect.x + rect.width, 0 ) );
-            else pattern.set( cairo_pattern_create_linear( 0, rect.y, 0, rect.y + rect.height ) );
-            cairo_pattern_add_color_stop( pattern, 0, ColorUtils::alphaColor( shadow, 0.1 ) );
-            cairo_pattern_add_color_stop( pattern, 0.6, ColorUtils::Rgba::transparent( shadow ) );
+        return _scrollHoleCache.insert( key, TileSet( surface, 7, 7, 1, 1 ) );
 
-            cairo_set_source( context, pattern );
-            gdk_cairo_rounded_rectangle( context, &rect, 4.5 );
-            cairo_fill( context );
-        }
+    }
 
-        // strong shadow
-        {
-            // left
-            Cairo::Pattern pattern( cairo_pattern_create_linear( rect.x, 0, rect.x + shadowWidth, 0 ) );
-            cairo_pattern_add_color_stop( pattern, 0, ColorUtils::alphaColor( shadow, vertical ? 0.2 : 0.3 ) );
-            cairo_pattern_add_color_stop( pattern, 0.5, ColorUtils::alphaColor( shadow, 0.1 ) );
-            cairo_pattern_add_color_stop( pattern, 1, ColorUtils::Rgba::transparent( shadow ) );
+    //______________________________________________________________________________
+    const TileSet& StyleHelper::scrollHandle( const ColorUtils::Rgba& base, const ColorUtils::Rgba& glow, int size )
+    {
 
-            cairo_set_source( context, pattern );
-            cairo_rounded_rectangle( context, rect.x, rect.y, shadowWidth, rect.height, shadowWidth, CornersLeft );
-            cairo_fill( context );
-        }
+        const ScrollHandleKey key( base, glow, size );
+        const TileSet& tileSet( _scrollHandleCache.value( key ) );
+        if( tileSet.isValid() ) return tileSet;
+
+        // create pixmap
+        const int w( 2*size );
+        const int h( 2*size );
+        Cairo::Surface surface( createSurface( w, h ) );
 
         {
-            // right
-            Cairo::Pattern pattern( cairo_pattern_create_linear( rect.x + rect.width - shadowWidth, 0, rect.x + rect.width, 0 ) );
-            cairo_pattern_add_color_stop( pattern, 0, ColorUtils::Rgba::transparent( shadow ) );
-            cairo_pattern_add_color_stop( pattern, 0.5, ColorUtils::alphaColor( shadow, 0.2 ) );
-            cairo_pattern_add_color_stop( pattern, 1, ColorUtils::alphaColor( shadow, vertical ? 0.2 : 0.3 ) );
+            Cairo::Context context( surface );
+            cairo_scale( context, (2.0*size)/14, (2.0*size)/14 );
 
-            cairo_set_source( context, pattern );
-            cairo_rounded_rectangle( context, rect.x + rect.width - shadowWidth, rect.y, shadowWidth, rect.height, shadowWidth, CornersRight );
-            cairo_fill( context );
+            // first create shadow
+            Cairo::Surface shadowSurface( createSurface( 10, 10 ) );
+            {
+                Cairo::Context context( shadowSurface );
+
+                // shadow/glow
+                drawOuterGlow( context, glow, 10 );
+
+            }
+
+            // draw shadow
+            TileSet( shadowSurface, 4, 4, 1, 1 ).
+                render( context, 0, 0, 14, 14, TileSet::Full );
+
+            // outline
+            {
+                const ColorUtils::Rgba mid( ColorUtils::midColor( base ) );
+                Cairo::Pattern pattern( cairo_pattern_create_linear( 0, 3, 0, 11 ) );
+                cairo_pattern_add_color_stop( pattern, 0, base );
+                cairo_pattern_add_color_stop( pattern, 1, mid );
+                cairo_set_source( context, pattern );
+                cairo_rounded_rectangle( context, 3, 3, 8, 8, 2.5 );
+                cairo_fill( context );
+            }
+
+            // contrast
+            {
+                const ColorUtils::Rgba light( ColorUtils::lightColor( base ) );
+                Cairo::Pattern pattern( cairo_pattern_create_linear( 0, 3, 0, 11 ) );
+                cairo_pattern_add_color_stop( pattern, 0, ColorUtils::alphaColor( light, 0.9 ) );
+                cairo_pattern_add_color_stop( pattern, 0.5, ColorUtils::alphaColor( light, 0.44 ) );
+                cairo_set_source( context, pattern );
+                cairo_rounded_rectangle( context, 3, 3, 8, 8, 2.5 );
+                cairo_fill( context );
+            }
+
         }
 
-        {
-            // top
-            Cairo::Pattern pattern( cairo_pattern_create_linear( 0, rect.y, 0, rect.y+3 ) );
-            cairo_pattern_add_color_stop( pattern, 0, ColorUtils::alphaColor( shadow, 0.3 ) );
-            cairo_pattern_add_color_stop( pattern, 1, ColorUtils::Rgba::transparent( shadow ) );
-
-            cairo_set_source( context, pattern );
-            cairo_rounded_rectangle( context, rect.x, rect.y, rect.width, 3, 3, CornersTop );
-            cairo_fill( context );
-        }
-
-        // light bottom border
-        {
-            Cairo::Pattern pattern( cairo_pattern_create_linear( 0, r.y + r.height/2 - 1, 0, r.y + r.height ) );
-            cairo_pattern_add_color_stop( pattern, 0, ColorUtils::Rgba::transparent( light ) );
-            cairo_pattern_add_color_stop( pattern, 1, ColorUtils::alphaColor( light, 0.8 ) );
-
-            cairo_set_source( context, pattern );
-            cairo_set_line_width( context, 1.0 );
-            cairo_rounded_rectangle( context, r.x+0.5, r.y, r.width-1, r.height, 5.0 );
-            cairo_stroke( context );
-        }
-
-        return m_scrollHoleCache.insert( key, TileSet( surface, 7, 7, 1, 1 ) );
+        return _scrollHandleCache.insert( key, TileSet( surface, 7, 7, 1, 1 ) );
 
     }
 
@@ -804,7 +925,7 @@ namespace Oxygen
     {
 
         const SlitFocusedKey key( glow );
-        const TileSet& tileSet( m_slitFocusedCache.value( key ) );
+        const TileSet& tileSet( _slitFocusedCache.value( key ) );
         if( tileSet.isValid() ) return tileSet;
 
         // create pixmap
@@ -814,94 +935,80 @@ namespace Oxygen
         {
             Cairo::Context context( surface );
 
-            cairo_pattern_t* pattern( cairo_pattern_create_radial( 4.5, 4.5, 4.5 ) );
-            ColorUtils::Rgba tmp( ColorUtils::alphaColor( glow, 180.0/255 ) );
-            cairo_pattern_add_color_stop( pattern, 0.75, tmp );
-
-            tmp.setAlpha( 0 );
-            cairo_pattern_add_color_stop( pattern,  0.90, tmp );
-            cairo_pattern_add_color_stop( pattern,  0.4, tmp );
+            cairo_pattern_t* pattern( cairo_pattern_create_radial( 4.5, 4.5, 3.5 ) );
+            cairo_pattern_add_color_stop( pattern, 1.0, ColorUtils::alphaColor( glow, 180.0/255 ) );
+            cairo_pattern_add_color_stop( pattern,  0.5, ColorUtils::Rgba::transparent( glow ) );
 
             cairo_set_source( context, pattern );
-            cairo_ellipse( context, 0, 0, 9, 9 ) ;
+            cairo_ellipse( context, 1, 1, 7, 7 ) ;
             cairo_fill( context );
 
         }
 
-        return m_slitFocusedCache.insert( key, TileSet( surface, 4, 4, 1, 1 ) );
+        return _slitFocusedCache.insert( key, TileSet( surface, 4, 4, 1, 1 ) );
 
     }
 
     //____________________________________________________________________
-    const TileSet& StyleHelper::dockFrame( const ColorUtils::Rgba &base, int w )
+    const TileSet& StyleHelper::dockFrame( const ColorUtils::Rgba &top, const ColorUtils::Rgba& bottom )
     {
 
-        // width should be odd
-        if( !w&1 ) --w;
-
         // key
-        DockFrameKey key( base, w );
-        const TileSet& tileSet( m_dockFrameCache.value( key ) );
+        DockFrameKey key( top, bottom );
+        const TileSet& tileSet( _dockFrameCache.value( key ) );
         if( tileSet.isValid() ) return tileSet;
 
         // fixed height
-        const int h( 9 );
+        const int size( 13 );
 
-        Cairo::Surface surface( createSurface( w, h ) );
+        Cairo::Surface surface( createSurface( size, size ) );
         {
 
             Cairo::Context context( surface );
-            cairo_save( context );
-            cairo_translate( context, 0.5, 0.5 );
-            cairo_scale( context, 1.0, 4.0/5.0 );
+            cairo_set_line_width( context, 1.0 );
 
             // local rectangle
-            const double xl(0);
-            const double yl(0);
-            const double wl( w-1 );
-            const double hl( (5.0*h)/4.0 );
+            const double w( size );
+            const double h( size );
 
+            const ColorUtils::Rgba lightTop( ColorUtils::alphaColor( ColorUtils::lightColor( top ), 0.5 ) );
+            const ColorUtils::Rgba lightBottom( ColorUtils::alphaColor( ColorUtils::lightColor( bottom ), 0.5 ) );
+            const ColorUtils::Rgba darkTop( ColorUtils::alphaColor( ColorUtils::darkColor( top ), 0.5 ) );
+            const ColorUtils::Rgba darkBottom( ColorUtils::alphaColor( ColorUtils::darkColor( bottom ), 0.5 ) );
 
-            const ColorUtils::Rgba light( ColorUtils::lightColor( base ) );
-            const ColorUtils::Rgba dark( ColorUtils::darkColor( base ) );
-
+            // dark frame
             {
-                // left and right border
-                Cairo::Pattern pattern( cairo_pattern_create_linear( 0, 0, w, 0 ) );
-                const ColorUtils::Rgba mixed( ColorUtils::alphaColor( light, 0.6 ) );
-                cairo_pattern_add_color_stop( pattern, 0, mixed );
-                cairo_pattern_add_color_stop( pattern, 0.1, ColorUtils::Rgba::transparent( light ) );
-                cairo_pattern_add_color_stop( pattern, 0.9, ColorUtils::Rgba::transparent( light ) );
-                cairo_pattern_add_color_stop( pattern, 1.0, mixed );
-
-                cairo_set_line_width( context, 1 );
+                Cairo::Pattern pattern( cairo_pattern_create_linear( 0, 0.5, 0, h - 1.5 ) );
+                cairo_pattern_add_color_stop( pattern, 0, darkTop );
+                cairo_pattern_add_color_stop( pattern, 1, darkBottom );
                 cairo_set_source( context, pattern );
-                cairo_rounded_rectangle( context, xl, yl-1, wl, hl, 4.5 );
-                cairo_stroke( context );
-
-                cairo_rounded_rectangle( context, xl+2, yl+1, wl-4, hl-3, 4 );
+                cairo_rounded_rectangle( context, 1.5, 0.5, w-3, h-2, 4 );
                 cairo_stroke( context );
             }
 
+            // bottom contrast
             {
-                Cairo::Pattern pattern( cairo_pattern_create_linear( 0, 0, w, 0 ) );
-                cairo_pattern_add_color_stop( pattern, 0, dark );
-                cairo_pattern_add_color_stop( pattern, 0.1, ColorUtils::Rgba::transparent( dark ) );
-                cairo_pattern_add_color_stop( pattern, 0.9, ColorUtils::Rgba::transparent( dark ) );
-                cairo_pattern_add_color_stop( pattern, 1.0, dark );
-
-                cairo_set_line_width( context, 1 );
+                Cairo::Pattern pattern( cairo_pattern_create_linear( 0, 0.5, 0, h - 0.5 ) );
+                cairo_pattern_add_color_stop( pattern, 0, ColorUtils::Rgba::transparent( lightBottom ) );
+                cairo_pattern_add_color_stop( pattern, 1, lightBottom );
                 cairo_set_source( context, pattern );
-                cairo_rounded_rectangle( context, xl+1, yl, wl-2, hl-2, 4 );
+                cairo_rounded_rectangle( context, 0.5, 0.5, w-1, h-1, 4.5 );
                 cairo_stroke( context );
             }
 
-            cairo_restore( context );
-            drawSeparator( context, base, 0, -1, w, 2, false );
-            drawSeparator( context, base, 0, h-3, w, 2, false );
+            // top contrast
+            {
+                Cairo::Pattern pattern( cairo_pattern_create_linear( 0, 1.5, 0, h - 2.5 ) );
+                cairo_pattern_add_color_stop( pattern, 0, lightTop );
+                cairo_pattern_add_color_stop( pattern, 1, ColorUtils::Rgba::transparent( lightTop ) );
+                cairo_rounded_rectangle( context, 2.5, 1.5, w-5, h-4, 3.5 );
+                cairo_set_source( context, pattern );
+                cairo_stroke( context );
+            }
+
         }
 
-        return m_dockFrameCache.insert( key, TileSet( surface, 4, 4, w-8, h-8 ) );
+        return _dockFrameCache.insert( key, TileSet( surface, (size-1)/2, (size-1)/2, 1, 1 ) );
     }
 
     //____________________________________________________________________
@@ -911,7 +1018,7 @@ namespace Oxygen
         ProgressBarIndicatorKey key( base, highlight, w, h );
 
         // try find in cache and return
-        if( const Cairo::Surface& surface = m_progressBarIndicatorCache.value( key ) )
+        if( const Cairo::Surface& surface = _progressBarIndicatorCache.value( key ) )
         { return surface; }
 
         // cached not found, create new
@@ -919,17 +1026,11 @@ namespace Oxygen
         // local rect
         int xl = 0;
         int yl = 0;
-        int wl = w+2;
-        int hl = h+3;
+        int wl = w;
+        int hl = h;
 
         Cairo::Surface surface( createSurface( wl, hl ) );
         Cairo::Context context( surface );
-
-        // adjust rect
-        xl += 1;
-        yl += 1;
-        wl -= 2;
-        hl -= 2;
 
         // colors
         const ColorUtils::Rgba lhighlight( ColorUtils::lightColor( highlight ) );
@@ -939,22 +1040,25 @@ namespace Oxygen
 
         {
             // shadow
-            cairo_rounded_rectangle( context, double(xl)+0.5, double(yl)-0.5, wl, hl+2, 2.3 );
+            cairo_rounded_rectangle( context, double(xl)+0.5, double(yl)+0.5, wl-1, hl, 3.0 );
             cairo_set_source( context, ColorUtils::alphaColor( shadow, 0.6 ) );
             cairo_set_line_width( context, 0.6 );
             cairo_stroke( context );
         }
 
+        xl += 1;
+        yl += 1;
+        wl -= 2;
+        hl -= 1;
+
         {
             // filling
             cairo_set_source( context, ColorUtils::mix( highlight, dark, 0.2 ) );
-            cairo_rectangle( context, xl+1, yl, wl-2, hl );
+            cairo_rounded_rectangle( context, xl, yl, wl, hl, 2.5 );
             cairo_fill( context );
         }
 
         // create pattern pixbuf
-        wl--;
-        if( wl > 0 )
         {
 
             Cairo::Pattern mask( cairo_pattern_create_linear( 0, 0, wl, 0 ) );
@@ -986,7 +1090,6 @@ namespace Oxygen
 
         }
 
-        cairo_set_antialias( context, CAIRO_ANTIALIAS_NONE );
         {
             // bevel
             Cairo::Pattern pattern( cairo_pattern_create_linear( 0, 0, 0, hl ) );
@@ -995,7 +1098,7 @@ namespace Oxygen
             cairo_pattern_add_color_stop( pattern, 1.0, ColorUtils::darkColor(highlight) );
             cairo_set_line_width( context, 1.0 );
             cairo_set_source( context, pattern );
-            cairo_rounded_rectangle( context, xl+0.5, yl+0.5, wl, hl, 1.5 );
+            cairo_rounded_rectangle( context, double(xl)+0.5, double(yl)+0.5, wl-1, hl-1, 2.5 );
             cairo_stroke( context );
         }
 
@@ -1008,23 +1111,23 @@ namespace Oxygen
             cairo_pattern_add_color_stop( pattern, 1.0, ColorUtils::Rgba::transparent( mix ) );
             cairo_set_line_width( context, 1.0 );
             cairo_set_source( context, pattern );
-            cairo_move_to( context, xl+0.5, yl+0.5 );
-            cairo_line_to( context, xl+wl-0.5, yl+0.5 );
+            cairo_move_to( context, double(xl)+0.5, double(yl)+0.5 );
+            cairo_line_to( context, double(xl+wl)-0.5, double(yl)+0.5 );
             cairo_stroke( context );
         }
 
         // note: we can't return the surface directly, because it is a temporary
         // we have to return the inserted object instead
-        return m_progressBarIndicatorCache.insert( key, surface );
+        return _progressBarIndicatorCache.insert( key, surface );
 
     }
 
     //________________________________________________________________________________________________________
-    const TileSet& StyleHelper::groove( const ColorUtils::Rgba &base, double shade, int size )
+    const TileSet& StyleHelper::groove( const ColorUtils::Rgba &base, int size )
     {
 
-        const GrooveKey key( base, shade, size );
-        const TileSet& tileSet( m_grooveCache.value( key ) );
+        const GrooveKey key( base, size );
+        const TileSet& tileSet( _grooveCache.value( key ) );
         if( tileSet.isValid() ) return tileSet;
 
         const int rsize( ( int )ceil( double( size ) * 3.0/7.0 ) );
@@ -1035,18 +1138,17 @@ namespace Oxygen
         {
 
             Cairo::Context context( surface );
-            cairo_translate( context, -2, -2 );
             cairo_scale( context, 6/w, 6/h );
 
-            Cairo::Pattern pattern( inverseShadowGradient( ColorUtils::shadowColor( base ), 3, 4, 0.0 ) );
+            Cairo::Pattern pattern( inverseShadowGradient( ColorUtils::shadowColor( base ), 1, 4, 0.0 ) );
             cairo_set_source( context, pattern );
-            cairo_ellipse( context, 3, 3, 4, 4 );
-            cairo_ellipse_negative( context, 4, 4, 2, 2 );
+            cairo_ellipse( context, 1, 1, 4, 4 );
+            cairo_ellipse_negative( context, 2, 2, 2, 2 );
             cairo_fill( context );
 
         }
 
-        return m_grooveCache.insert( key, TileSet( surface, rsize, rsize, rsize, rsize, rsize-1, rsize, 2, 1 ) );
+        return _grooveCache.insert( key, TileSet( surface, rsize, rsize, rsize, rsize, rsize-1, rsize, 2, 1 ) );
 
     }
 
@@ -1055,7 +1157,7 @@ namespace Oxygen
     {
 
         const SelectionKey key( base, h, custom );
-        const TileSet& tileSet( m_selectionCache.value( key ) );
+        const TileSet& tileSet( _selectionCache.value( key ) );
         if( tileSet.isValid() ) return tileSet;
 
         const int w = 32+16;
@@ -1097,12 +1199,12 @@ namespace Oxygen
 
         }
 
-        return m_selectionCache.insert( key, TileSet( surface, 8, 0, 32, h ) );
+        return _selectionCache.insert( key, TileSet( surface, 8, 0, 32, h ) );
 
     }
 
     //____________________________________________________________________
-    void StyleHelper::renderDot( Cairo::Context& context, const ColorUtils::Rgba& base, int x, int y ) const
+    void StyleHelper::renderDot( cairo_t* context, const ColorUtils::Rgba& base, int x, int y ) const
     {
         // Reduce diameter to make dots look more like in Oxygen-Qt
         const double diameter( 1.8 - 0.35 );
@@ -1181,38 +1283,7 @@ namespace Oxygen
     }
 
     //___________________________________________________________________________________________
-    void StyleHelper::drawHole( Cairo::Context& context, const ColorUtils::Rgba& color, double shade, int r ) const
-    {
-
-        const int r2( 2*r );
-        const ColorUtils::Rgba base( ColorUtils::shade( color, shade ) );
-        const ColorUtils::Rgba light( ColorUtils::shade( ColorUtils::lightColor( color ), shade ) );
-        const ColorUtils::Rgba dark( ColorUtils::shade( ColorUtils::darkColor( color ), shade ) );
-        const ColorUtils::Rgba mid( ColorUtils::shade( ColorUtils::midColor( color ), shade ) );
-
-        // bevel
-        const double y( ColorUtils::luma( base ) );
-        const double yl( ColorUtils::luma( light ) );
-        const double yd( ColorUtils::luma( dark ) );
-
-        Cairo::Pattern pattern( cairo_pattern_create_linear( 0, 2, 0, r2-2 ) );
-        cairo_pattern_add_color_stop( pattern, 0.2, dark );
-        cairo_pattern_add_color_stop( pattern, 0.5, mid );
-        cairo_pattern_add_color_stop( pattern, 1.0, light );
-        if( y < yl && y > yd )
-        {
-            // no middle when color is very light/dark
-            cairo_pattern_add_color_stop( pattern, 0.6, base );
-        }
-
-        cairo_set_source( context, pattern );
-        cairo_ellipse( context, 3, 3, r2-6, r2-6 );
-        cairo_fill( context );
-
-    }
-
-    //___________________________________________________________________________________________
-    void StyleHelper::drawShadow( Cairo::Context& context, const ColorUtils::Rgba& base, int size) const
+    void StyleHelper::drawShadow( Cairo::Context& context, const ColorUtils::Rgba& base, int size ) const
     {
 
         const double m( double(size-2)*0.5 );
@@ -1269,7 +1340,7 @@ namespace Oxygen
         cairo_save( context );
         cairo_set_operator( context, CAIRO_OPERATOR_DEST_OUT );
         cairo_set_source( context, ColorUtils::Rgba::black() );
-        cairo_ellipse( context, w, w, size - 2*w, size - 2*w );
+        cairo_ellipse( context, w+0.5, w+0.5, size - 2*w-1, size - 2*w-1 );
         cairo_fill( context );
         cairo_restore( context );
 
@@ -1358,6 +1429,56 @@ namespace Oxygen
             cairo_ellipse( context, ic, ic, is, is );
             cairo_fill( context );
         }
+
+        return;
+
+    }
+
+    //__________________________________________________________________________________________________________
+    void StyleHelper::drawSliderSlab( Cairo::Context& context, const ColorUtils::Rgba& color, bool sunken, double shade ) const
+    {
+
+        const ColorUtils::Rgba light( ColorUtils::shade( ColorUtils::lightColor(color), shade) );
+        const ColorUtils::Rgba dark( ColorUtils::shade( ColorUtils::darkColor( color ), shade) );
+
+        {
+            //plain background
+            Cairo::Pattern pattern( cairo_pattern_create_linear( 0, 3, 0, 21 ) );
+            cairo_pattern_add_color_stop( pattern, 0, light );
+            cairo_pattern_add_color_stop( pattern, 1, dark );
+            cairo_set_source( context, pattern );
+            cairo_ellipse( context, 3, 3, 15, 15 );
+            cairo_fill( context );
+
+        }
+
+        if( sunken )
+        {
+
+            //plain background
+            Cairo::Pattern pattern( cairo_pattern_create_linear( 0, 3, 0, 21 ) );
+            cairo_pattern_add_color_stop( pattern, 0, dark );
+            cairo_pattern_add_color_stop( pattern, 1, light );
+            cairo_set_source( context, pattern );
+            cairo_ellipse( context, 5, 5, 11, 11 );
+            cairo_fill( context );
+
+
+        }
+
+        {
+            // outline circle
+            Cairo::Pattern pattern( cairo_pattern_create_linear( 0, 3, 0, 30 ) );
+            cairo_pattern_add_color_stop( pattern, 0, light );
+            cairo_pattern_add_color_stop( pattern, 1, dark );
+            cairo_set_source( context, pattern );
+
+            cairo_ellipse( context, 3.5, 3.5, 14, 14 );
+            cairo_set_line_width( context, 1.0 );
+            cairo_stroke( context );
+        }
+
+        return;
 
     }
 

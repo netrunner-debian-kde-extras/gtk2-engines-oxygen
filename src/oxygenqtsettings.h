@@ -20,13 +20,17 @@
 * MA 02110-1301, USA.
 */
 
+#include "oxygenanimationmodes.h"
 #include "oxygenapplicationname.h"
 #include "oxygengtkicons.h"
 #include "oxygengtkrc.h"
 #include "oxygenoption.h"
 #include "oxygenoptionmap.h"
 #include "oxygenpalette.h"
+#include "oxygenshadowconfiguration.h"
 #include "oxygenpathlist.h"
+#include "oxygenfontinfo.h"
+#include "pango/pango.h"
 
 #include <iostream>
 #include <sstream>
@@ -50,12 +54,28 @@ namespace Oxygen
         virtual ~QtSettings( void )
         {}
 
+        //! load kdeglobals settings into optionMap
+        void loadKdeGlobals( void );
+
+        //! initialization flags
+        enum Flags
+        {
+            AppName = 1<<0,
+            Icons = 1<<1,
+            Fonts = 1<<2,
+            KdeGlobals = 1<<3,
+            Oxygen = 1<<4,
+            Colors = 1<<5,
+            All = AppName|Icons|Fonts|KdeGlobals|Oxygen|Colors,
+            Forced = 1<<6
+        };
+
         //! returns user config dir
         std::string userConfigDir( void ) const
         { return _userConfigDir; }
 
         //! initialize
-        void initialize( void );
+        void initialize( unsigned int flags = All );
 
         //! palette
         const Palette& palette( void ) const
@@ -71,6 +91,10 @@ namespace Oxygen
         //! use effect to render active (mouse-over) icons
         bool useIconEffect( void ) const
         { return _useIconEffect; }
+
+        //! background pixmap
+        const std::string& backgroundPixmap( void ) const
+        { return _backgroundPixmap; }
 
         //! checkbox style
         enum CheckBoxStyle
@@ -93,14 +117,6 @@ namespace Oxygen
         //! checkbox style
         TabStyle tabStyle( void ) const
         { return _tabStyle; }
-
-        //! true if hovered scrollbars must be colored
-        bool scrollBarColored( void ) const
-        { return _scrollBarColored; }
-
-        //! true if hovered scrollbars must be colored
-        bool scrollBarBevel( void ) const
-        { return _scrollBarBevel; }
 
         //! 'add-line' buttons
         /*! corresponds to buttons located at the bottom (right) of vertical (horizontal) toolbars */
@@ -184,6 +200,56 @@ namespace Oxygen
 
         //@}
 
+        //!@name animation enable state
+        //@{
+
+        //! all animations
+        bool animationsEnabled( void ) const
+        { return _animationsEnabled; }
+
+        //! generic animations
+        bool genericAnimationsEnabled( void ) const
+        { return _genericAnimationsEnabled; }
+
+        //@}
+
+        //!@name animations type
+        //@{
+
+        AnimationType menuBarAnimationType( void ) const
+        { return _menuBarAnimationType; }
+
+        AnimationType menuAnimationType( void ) const
+        { return _menuAnimationType; }
+
+        AnimationType toolBarAnimationType( void ) const
+        { return _toolBarAnimationType; }
+
+        //@}
+
+        //!@name animations duration
+        //@{
+
+        int genericAnimationsDuration( void ) const
+        { return _genericAnimationsDuration; }
+
+        int menuBarAnimationsDuration( void ) const
+        { return _menuBarAnimationsDuration; }
+
+        int menuBarFollowMouseAnimationsDuration( void ) const
+        { return _menuBarFollowMouseAnimationsDuration; }
+
+        int menuAnimationsDuration( void ) const
+        { return _menuAnimationsDuration; }
+
+        int menuFollowMouseAnimationsDuration( void ) const
+        { return _menuFollowMouseAnimationsDuration; }
+
+        int toolBarAnimationsDuration( void ) const
+        { return _toolBarAnimationsDuration; }
+
+        //@}
+
         //!@name window decoration options
         //@{
 
@@ -217,6 +283,25 @@ namespace Oxygen
         FrameBorder frameBorder( void ) const
         { return _frameBorder; }
 
+        //! shadow configuration
+        const ShadowConfiguration& shadowConfiguration( Palette::Group group ) const
+        {
+            switch( group )
+            {
+                default:
+                case Palette::Inactive: return _inactiveShadowConfiguration;
+                case Palette::Active: return _activeShadowConfiguration;
+            }
+        }
+
+        //! windeco font
+        const FontInfo& WMFont( void ) const
+        { return _WMFont; }
+
+        //! title alignment
+        const PangoAlignment TitleAlignment( void ) const
+        { return _titleAlignment; }
+
         //@}
 
         //! true if argb is enabled
@@ -248,7 +333,7 @@ namespace Oxygen
         void loadKdeIcons( void );
 
         //! load palette from kdeglobals
-        void loadKdePalette( void );
+        void loadKdePalette( bool forced = false );
 
         //! update gtk colors
         /*! generates an RC string and pass it to gtk */
@@ -266,9 +351,6 @@ namespace Oxygen
         // sanitize path
         std::string sanitizePath( const std::string& ) const;
 
-        // read all options from kdeglobals
-        OptionMap readOptions( const std::string& ) const;
-
         private:
 
         //! application
@@ -277,9 +359,6 @@ namespace Oxygen
 
         //! kde global options
         OptionMap _kdeGlobals;
-
-        //! kde oxygen options
-        OptionMap _oxygen;
 
         //! user config directory
         std::string _userConfigDir;
@@ -321,17 +400,14 @@ namespace Oxygen
         //! active icon effect
         bool _useIconEffect;
 
+        //! background pixmap
+        std::string _backgroundPixmap;
+
         //! checkbox style
         CheckBoxStyle _checkBoxStyle;
 
         //! checkbox style
         TabStyle _tabStyle;
-
-        //! colored scrollbar (on hover)
-        bool _scrollBarColored;
-
-        //! scrollbar bevel
-        bool _scrollBarBevel;
 
         //! 'add-line' buttons
         /*! corresponds to buttons located at the bottom (right) of vertical (horizontal) toolbars */
@@ -379,6 +455,44 @@ namespace Oxygen
 
         //@}
 
+        //!@name animation options
+        //@{
+
+        //! all animations
+        bool _animationsEnabled;
+
+        //! generic animations
+        bool _genericAnimationsEnabled;
+
+        //! menubar animations
+        AnimationType _menuBarAnimationType;
+
+        //! menu animations
+        AnimationType _menuAnimationType;
+
+        //! toolbar animation type
+        AnimationType _toolBarAnimationType;
+
+        //! generic animations
+        int _genericAnimationsDuration;
+
+        //! menubar animations
+        int _menuBarAnimationsDuration;
+
+        //! follow mouse animation
+        int _menuBarFollowMouseAnimationsDuration;
+
+        //! menu animation
+        int _menuAnimationsDuration;
+
+        //! follow mouse animation
+        int _menuFollowMouseAnimationsDuration;
+
+        //! toolbar (follow-mouse) animation
+        int _toolBarAnimationsDuration;
+
+        //@}
+
         //!@name window decoration options
         //@{
 
@@ -387,6 +501,18 @@ namespace Oxygen
 
         //! frame border
         FrameBorder _frameBorder;
+
+        //! active shadows
+        ShadowConfiguration _activeShadowConfiguration;
+
+        //! inactive shadows
+        ShadowConfiguration _inactiveShadowConfiguration;
+
+        //! windeco font
+        FontInfo _WMFont;
+
+        //! title alignment
+        PangoAlignment _titleAlignment;
 
         //@}
 
@@ -398,10 +524,13 @@ namespace Oxygen
         bool _kdeColorsInitialized;
         bool _gtkColorsInitialized;
 
+        //! KDE running flags
+        bool _KDESession;
+
         //! gtk icons generator
         GtkIcons _icons;
 
-        //! rc options (passed to gtk at the end of init
+        //! gtkrc
         Gtk::RC _rc;
 
     };

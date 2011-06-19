@@ -37,6 +37,7 @@ namespace Oxygen
 
         //! constructor
         TreeViewData( void ):
+            _cursor(0L),
             _target(0L),
             _fullWidth( false ),
             _x(-1),
@@ -53,6 +54,14 @@ namespace Oxygen
 
         //! disconnect
         void disconnect( GtkWidget* );
+
+        //! set cursor
+        void setCursor( GdkCursor* cursor )
+        {
+            if( _cursor == cursor ) return;
+            _cursor = cursor;
+            updateColumnsCursor();
+        }
 
         //! full width flag
         void setFullWidth( bool value )
@@ -87,6 +96,9 @@ namespace Oxygen
         //! set mouse over state
         virtual bool setHovered( GtkWidget* widget, bool value );
 
+        //! update columns cursor
+        void updateColumnsCursor( void ) const;
+
         //! update hovered cell based on pointer position
         void updatePosition( GtkWidget*, int x, int y );
 
@@ -119,7 +131,6 @@ namespace Oxygen
 
             GtkWidget* _widget;
             Signal _destroyId;
-            Signal _styleChangeId;
             Signal _valueChangedId;
         };
 
@@ -133,18 +144,25 @@ namespace Oxygen
         //!@name static callbacks
         //@{
         static gboolean childDestroyNotifyEvent( GtkWidget*, gpointer );
-        static void childStyleChangeNotifyEvent( GtkWidget*, GtkStyle*, gpointer );
         static void childValueChanged( GtkRange*, gpointer );
+        static void columnsChanged( GtkTreeView*, gpointer );
         static gboolean motionNotifyEvent( GtkWidget*, GdkEventMotion*, gpointer );
         //@}
 
         private:
 
+        //! cursor
+        /*! associated to columns, for resize */
+        GdkCursor* _cursor;
+
         //! target widget
         GtkWidget* _target;
 
-        //! callbacks ids
+        //!@name callbacks ids
+        //@{
         Signal _motionId;
+        Signal _columnsChangedId;
+        //@}
 
         //! true if hover works on full width
         bool _fullWidth;

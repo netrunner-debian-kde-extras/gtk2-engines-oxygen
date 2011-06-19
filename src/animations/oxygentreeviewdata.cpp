@@ -60,8 +60,11 @@ namespace Oxygen
                 updatePosition( widget, xPointer, yPointer );
             }
 
+            // columns changed signal connection
+            _columnsChangedId.connect( G_OBJECT(widget), "columns-changed", G_CALLBACK( columnsChanged ), this );
         }
 
+        // motion notify signal connection
         _motionId.connect( G_OBJECT(widget), "motion-notify-event", G_CALLBACK( motionNotifyEvent ), this );
 
         // also register scrollbars from parent scrollWindow
@@ -80,7 +83,7 @@ namespace Oxygen
         // reset target
         _target = 0L;
 
-        // motion handler
+        _columnsChangedId.disconnect();
         _motionId.disconnect();
 
         // also free path if valid
@@ -93,6 +96,30 @@ namespace Oxygen
         // base class
         HoverData::disconnect( widget );
 
+    }
+
+    //________________________________________________________________________________
+    void TreeViewData::updateColumnsCursor( void ) const
+    {
+        // check tree view and target
+        if( !_cursor ) return;
+        if( !GTK_IS_TREE_VIEW( _target ) ) return;
+
+        #if OXYGEN_DEBUG
+        std::cerr << "Oxygen::TreeViewData::updateColumnsCursor - " << _target << " (" << G_OBJECT_TYPE_NAME( _target ) << ")" << std::endl;
+        #endif
+
+        GList* children( gtk_tree_view_get_columns( GTK_TREE_VIEW( _target ) ) );
+        for( GList *child = g_list_first( children ); child; child = g_list_next( child ) )
+        {
+            if( GTK_IS_TREE_VIEW_COLUMN( child->data ) )
+            {
+                GdkWindow* window( GTK_TREE_VIEW_COLUMN( child->data )->window );
+                gdk_window_set_cursor( window, _cursor );
+            }
+        }
+
+        if( children ) g_list_free( children );
     }
 
     //________________________________________________________________________________
@@ -148,14 +175,8 @@ namespace Oxygen
         }
 
         // take the union of both rectangles
-        GdkRectangle updateRect;
-        if( Gtk::gdk_rectangle_is_valid( &oldRect ) )
-        {
-
-            if( Gtk::gdk_rectangle_is_valid( &newRect ) ) gdk_rectangle_union( &oldRect, &newRect, &updateRect );
-            else updateRect = oldRect;
-
-        } else updateRect = newRect;
+        GdkRectangle updateRect( Gtk::gdk_rectangle() );
+        Gtk::gdk_rectangle_union( &oldRect, &newRect, &updateRect );
 
         // store new cell info
         _cellInfo = cellInfo;
@@ -231,7 +252,6 @@ namespace Oxygen
         // make sure widget is not already in map
         data._widget = widget;
         data._destroyId.connect( G_OBJECT(widget), "destroy", G_CALLBACK( childDestroyNotifyEvent ), this );
-        data._styleChangeId.connect( G_OBJECT(widget), "style-set", G_CALLBACK( childStyleChangeNotifyEvent ), this );
         data._valueChangedId.connect( G_OBJECT(widget), "value-changed", G_CALLBACK( childValueChanged ), this );
 
     }
@@ -250,14 +270,22 @@ namespace Oxygen
         return FALSE;
     }
 
-    //____________________________________________________________________________________________
-    void TreeViewData::childStyleChangeNotifyEvent( GtkWidget* widget, GtkStyle*, gpointer data )
-    { static_cast<TreeViewData*>(data)->unregisterChild( widget ); }
-
     //________________________________________________________________________________
     void TreeViewData::childValueChanged( GtkRange* widget, gpointer data )
     {
         static_cast<TreeViewData*>(data)->triggerRepaint();
+        return;
+    }
+
+    //________________________________________________________________________________
+    void TreeViewData::columnsChanged( GtkTreeView*, gpointer data )
+    {
+
+        #if OXYGEN_DEBUG
+        std::cerr << "Oxygen::TreeViewData::columnsChanged" << std::endl;
+        #endif
+
+        static_cast<TreeViewData*>(data)->updateColumnsCursor();
         return;
     }
 
@@ -286,7 +314,6 @@ namespace Oxygen
         #endif
 
         _destroyId.disconnect();
-        _styleChangeId.disconnect();
         _valueChangedId.disconnect();
         _widget = 0L;
 

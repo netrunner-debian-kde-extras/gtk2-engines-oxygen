@@ -23,11 +23,16 @@
 #include "oxygencairocontext.h"
 #include "oxygencairoutils.h"
 #include "oxygencolorutils.h"
+#include "oxygenfontinfo.h"
 #include "oxygengtkutils.h"
+#include "oxygenmetrics.h"
 #include "oxygenwindecobutton.h"
+#include "oxygenwindowshadow.h"
 
 #include <algorithm>
 #include <cmath>
+
+#include <X11/Xatom.h>
 
 namespace Oxygen
 {
@@ -46,18 +51,53 @@ namespace Oxygen
     }
 
     //__________________________________________________________________
-    void Style::initialize( void )
+    void Style::initialize( unsigned int flags )
     {
-        _settings.initialize();
 
-        // pass window drag mode to window manager
-        if( !settings().windowDragEnabled() ) windowManager().setMode( WindowManager::Disabled );
-        else if( settings().windowDragMode() == QtSettings::WD_MINIMAL ) windowManager().setMode( WindowManager::Minimal );
-        else windowManager().setMode( WindowManager::Full );
+        // initialize ref surface
+        helper().initializeRefSurface();
 
-        // pass drag distance and delay to window manager
-        windowManager().setDragDistance( settings().startDragDist() );
-        windowManager().setDragDelay( settings().startDragTime() );
+        // reset caches if colors have changed
+        if( flags&QtSettings::Colors )
+        {
+            helper().clearCaches();
+            ColorUtils::clearCaches();
+        }
+
+        // reinitialize settings
+        _settings.initialize( flags );
+
+        // reinitialize animations
+        _animations.initialize( _settings );
+
+        if( flags&QtSettings::Oxygen )
+        {
+            // pass window drag mode to window manager
+            if( !settings().windowDragEnabled() ) windowManager().setMode( WindowManager::Disabled );
+            else if( settings().windowDragMode() == QtSettings::WD_MINIMAL ) windowManager().setMode( WindowManager::Minimal );
+            else windowManager().setMode( WindowManager::Full );
+
+        }
+
+        if( flags&QtSettings::KdeGlobals )
+        {
+            // pass drag distance and delay to window manager
+            windowManager().setDragDistance( settings().startDragDist() );
+            windowManager().setDragDelay( settings().startDragTime() );
+        }
+
+        // background surface
+        if( !settings().backgroundPixmap().empty() )
+        {
+            setBackgroundSurface( settings().backgroundPixmap() );
+            if( !hasBackgroundSurface() )
+            { std::cerr << "Oxygen::Style::initialize - unable to load background image: " << settings().backgroundPixmap() << std::endl; }
+        }
+
+        // create window shadow
+        WindowShadow shadow( settings(), helper() );
+        shadowHelper().setApplicationName( settings().applicationName() );
+        shadowHelper().initialize( settings().palette().color(Palette::Window), shadow );
 
     }
 
@@ -122,6 +162,17 @@ namespace Oxygen
 
     }
 
+    //____________________________________________________________________________________
+    bool Style::hasBackgroundSurface( void ) const
+    {
+        if( !_backgroundSurface.isValid() ) return false;
+        const cairo_status_t status( cairo_surface_status( _backgroundSurface ) );
+        return
+            status != CAIRO_STATUS_NO_MEMORY &&
+            status != CAIRO_STATUS_FILE_NOT_FOUND &&
+            status != CAIRO_STATUS_READ_ERROR;
+    }
+
     //__________________________________________________________________
     void Style::fill( GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h, const ColorUtils::Rgba& color ) const
     {
@@ -178,8 +229,6 @@ namespace Oxygen
         const StyleOptions& options, TileSet::Tiles tiles )
     {
 
-        bool needToDestroyContext;
-
         // define colors
         ColorUtils::Rgba base( color( Palette::Window, options ) );
 
@@ -193,35 +242,47 @@ namespace Oxygen
         gint wx(0), wy(0);
 
         // if we aren't going to draw window decorations...
-        if(!context)
+        bool needToDestroyContext( false );
+        if( context && !window )
         {
 
-            // create context and translate to toplevel coordinates
-            // make it the old good way since context is cairo_t* instead Cairo::Context
-            context = gdk_cairo_create(window);
-            needToDestroyContext=true;
+            // drawing window decorations, so logic is simplified
+            ww=w;
+            wh=h;
+            cairo_save(context);
+            cairo_translate(context,x,y);
+            x=0;
+            y=0;
 
-            if( clipRect )
-            {
-                cairo_rectangle(context,clipRect->x,clipRect->y,clipRect->width,clipRect->height);
-                cairo_clip(context);
-            }
+        } else {
 
-            // add hole if required (this can be done before translating the context
-            if( options&NoFill )
+
+            if( !context )
             {
-                renderHoleMask( context, x, y, w, h, tiles );
-            }
+              // create context and translate to toplevel coordinates
+              // make it the old good way since context is cairo_t* instead Cairo::Context
+              context = gdk_cairo_create(window);
+              needToDestroyContext=true;
+
+              if( clipRect )
+              {
+                  cairo_rectangle(context,clipRect->x,clipRect->y,clipRect->width,clipRect->height);
+                  cairo_clip(context);
+              }
+
+            } else cairo_save( context );
 
             // get window dimension and position
-            if( !Gtk::gdk_map_to_toplevel( window, widget, &wx, &wy, &ww, &wh, true ) )
+            if( !Gtk::gdk_map_to_toplevel( window, widget, &wx, &wy, &ww, &wh, true ) ||
+             Style::instance().settings().applicationName().useFlatBackground( widget ) )
             {
 
                 // flat painting for all other apps
                 cairo_set_source(context,base);
                 cairo_rectangle(context,x,y,w,h);
                 cairo_fill(context);
-                cairo_destroy(context);
+                if( needToDestroyContext ) cairo_destroy(context);
+                else cairo_restore(context);
                 return;
 
             }
@@ -233,17 +294,6 @@ namespace Oxygen
 
             // no sense in context saving since it will be destroyed
             cairo_translate( context, -wx, -wy );
-
-        } else {
-
-            // drawing window decorations, so logic is simplified
-            ww=w;
-            wh=h;
-            needToDestroyContext=false;
-            cairo_save(context);
-            cairo_translate(context,x,y);
-            x=0;
-            y=0;
 
         }
 
@@ -315,10 +365,90 @@ namespace Oxygen
 
         }
 
+        if( hasBackgroundSurface() )
+        {
+
+            // no sense in context saving since it will be destroyed
+            cairo_translate( context, -40, -(48-20) );
+            cairo_set_source_surface( context, _backgroundSurface, 0, 0 );
+            cairo_rectangle( context, 0, 0, ww + wx + 40, wh + wy + 48 - 20 );
+            cairo_fill( context );
+
+        }
+
         if(needToDestroyContext) cairo_destroy(context);
         else cairo_restore(context);
 
         return;
+
+    }
+
+    //__________________________________________________________________
+    void Style::renderGroupBoxBackground(
+        cairo_t* context,
+        GdkWindow* window, GtkWidget* widget,
+        GdkRectangle* clipRect, gint x, gint y, gint w, gint h,
+        const StyleOptions& options,
+        TileSet::Tiles tiles )
+    {
+
+        // find groupbox parent
+        GtkWidget* parent( Gtk::gtk_parent_groupbox( widget ) );
+        if( !parent ) return;
+
+        // toplevel window information and relative positioning
+        gint ww(0), wh(0);
+        gint wx(0), wy(0);
+
+        // map to parent
+        if( !Gtk::gtk_widget_map_to_parent( widget, parent, &wx, &wy, &ww, &wh ) )
+        { return; }
+
+        // create context and translate
+        bool needToDestroyContext( false );
+        if( !context )
+        {
+            // create context and translate to toplevel coordinates
+            // make it the old good way since context is cairo_t* instead Cairo::Context
+            context = gdk_cairo_create(window);
+            needToDestroyContext=true;
+
+            if( clipRect )
+            {
+              cairo_rectangle(context,clipRect->x,clipRect->y,clipRect->width,clipRect->height);
+              cairo_clip(context);
+            }
+
+        } else cairo_save( context );
+
+        const int margin( 1 );
+        wh += 2*margin;
+        ww += 2*margin;
+        x+=wx;
+        y+=wy;
+        cairo_translate( context, -wx, -wy );
+
+        // define colors
+        ColorUtils::Rgba base;
+        if( options&Blend )
+        {
+
+            gint wwh, wwy;
+            Gtk::gtk_widget_map_to_toplevel( parent, 0L, &wwy, 0L, &wwh );
+            base = ColorUtils::backgroundColor( settings().palette().color( Palette::Window ), wwh, wwy-1+wh/2 );
+
+        } else {
+
+            base = settings().palette().color( Palette::Window );
+
+        }
+
+        const int xGroupBox = x - wx - margin;
+        const int yGroupBox = y - wy - margin;
+        renderGroupBox( context, base, xGroupBox, yGroupBox, ww, wh, options );
+
+        if(needToDestroyContext) cairo_destroy(context);
+        else cairo_restore(context);
 
     }
 
@@ -428,7 +558,7 @@ namespace Oxygen
             cairo_pattern_add_color_stop( pattern, 0, top );
             cairo_pattern_add_color_stop( pattern, 1, bottom );
 
-            gdk_cairo_rounded_rectangle( context, &rect, 4, round ? CornersAll:CornersNone );
+            gdk_cairo_rounded_rectangle( context, &rect, 3.5, round ? CornersAll:CornersNone );
             cairo_set_source( context, pattern );
             cairo_fill( context );
 
@@ -440,7 +570,7 @@ namespace Oxygen
             cairo_pattern_add_color_stop( pattern, 0.5, ColorUtils::lightColor( bottom ) );
             cairo_pattern_add_color_stop( pattern, 0.9, bottom );
 
-            cairo_rounded_rectangle( context, 0.5, 0.5, w-1, h-1, 4, round ? CornersAll:CornersNone );
+            cairo_rounded_rectangle( context, 0.5, 0.5, w-1, h-1, 3.5, round ? CornersAll:CornersNone );
             cairo_set_line_width( context, 1.0 );
             cairo_set_source( context, pattern );
             cairo_stroke( context );
@@ -614,8 +744,10 @@ namespace Oxygen
     //____________________________________________________________________________________
     void Style::renderHoleBackground(
         GdkWindow* window,
+        GtkWidget* widget,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, const StyleOptions& options, TileSet::Tiles tiles )
+        gint x, gint y, gint w, gint h, const StyleOptions& options, TileSet::Tiles tiles,
+        gint sideMargin )
     {
 
         // do nothing if not enough room
@@ -630,25 +762,40 @@ namespace Oxygen
 
             // create a rounded-rect antimask for renderHoleBackground
             Cairo::Context context( window, clipRect );
-            renderHoleMask( context, x, y, w, h, tiles );
+            renderHoleMask( context, x, y, w, h, tiles, sideMargin );
             cairo_set_source( context, settings().palette().color( Palette::Window ) );
             cairo_rectangle( context, x, y, w, h );
             cairo_fill( context );
 
+        } else if( widget && animations().groupBoxEngine().contains( Gtk::gtk_parent_groupbox( widget ) ) ) {
+
+            // add hole if required (this can be done before translating the context
+            Cairo::Context context( window, clipRect );
+            renderHoleMask( context, x, y, w, h, tiles, sideMargin );
+            renderWindowBackground( context, window, 0L, clipRect, x, y, w, h, options, tiles);
+            renderGroupBoxBackground( context, window, widget, clipRect, x, y, w, h, options | Blend | NoFill, tiles );
+
         } else {
+
+            Cairo::Context context( window, clipRect );
+            renderHoleMask( context, x, y, w, h, tiles, sideMargin );
 
             /*
             normal window background.
             pass the NoFill option, to ask for a mask
             */
-            renderWindowBackground( window, clipRect, x, y, w, h, NoFill, tiles);
+            renderWindowBackground( context, window,  0L, clipRect, x, y, w, h, options, tiles);
 
         }
 
     }
 
     //__________________________________________________________________
-    void Style::renderSplitter( GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h, const StyleOptions& options ) const
+    void Style::renderSplitter(
+        GdkWindow* window, GdkRectangle* clipRect,
+        gint x, gint y, gint w, gint h,
+        const StyleOptions& options,
+        const AnimationData& data ) const
     {
 
         // orientation
@@ -660,10 +807,22 @@ namespace Oxygen
         // context
         Cairo::Context context( window, clipRect );
 
-        // hover rect
-        if( options&Hover )
+        // hover color
+        ColorUtils::Rgba highlight;
+        if( data._mode == AnimationHover )
         {
-            const ColorUtils::Rgba& highlight( ColorUtils::alphaColor( ColorUtils::lightColor( base ), 0.5 ) );
+
+            highlight = ColorUtils::alphaColor( ColorUtils::lightColor( base ), 0.5*data._opacity );
+
+        } else if( options&Hover ) {
+
+            highlight = ColorUtils::alphaColor( ColorUtils::lightColor( base ), 0.5 );
+
+        }
+
+        // render hover rect
+        if( highlight.isValid() )
+        {
 
             Cairo::Context context( window, clipRect );
             Cairo::Pattern pattern;
@@ -748,13 +907,6 @@ namespace Oxygen
         const ColorUtils::Rgba base( settings().palette().color( Palette::Active, Palette::Window ) );
         const ColorUtils::Rgba glow( settings().palette().color( group, Palette::Selected ) );
 
-        /* need to adjust clipRect */
-        if( clipRect )
-        {
-            clipRect->y -= 2;
-            clipRect->height += 4;
-        }
-
         // context
         Cairo::Context context( window, clipRect );
 
@@ -763,11 +915,11 @@ namespace Oxygen
 
         // make sure that width is large enough
         const int indicatorSize( (options&Vertical ? h:w ) );
-        if( indicatorSize >= 4 )
+
+        if( indicatorSize >= 4 && w > 0 && h > 1 )
         {
             // get surface
-            const Cairo::Surface& surface( helper().progressBarIndicator( base, glow, w, h ) );
-            cairo_translate( context, -1, -2 );
+            const Cairo::Surface& surface( helper().progressBarIndicator( base, glow, w, h-1 ) );
             cairo_translate( context, x, y );
             cairo_rectangle( context, 0, 0, cairo_surface_get_width( surface ), cairo_surface_get_height( surface ) );
             cairo_set_source_surface( context, surface, 0, 0 );
@@ -794,7 +946,7 @@ namespace Oxygen
     }
 
     //____________________________________________________________________________________
-    void Style::renderHoleMask( cairo_t* context, int x, int y, int w, int h, TileSet::Tiles tiles )
+    void Style::renderHoleMask( cairo_t* context, gint x, gint y, gint w, gint h, TileSet::Tiles tiles, gint sideMargin )
     {
 
         GdkRectangle mask = {x+2, y+1, w-4, h-3 };
@@ -802,15 +954,15 @@ namespace Oxygen
         Corners corners( CornersNone );
         if( tiles & TileSet::Left )
         {
-            mask.x += Entry_SideMargin;
-            mask.width -= Entry_SideMargin;
+            mask.x += sideMargin;
+            mask.width -= sideMargin;
             if( tiles & TileSet::Top ) corners |= CornersTopLeft;
             if( tiles & TileSet::Bottom ) corners |= CornersBottomLeft;
         }
 
         if( tiles & TileSet::Right )
         {
-            mask.width -= Entry_SideMargin;
+            mask.width -= sideMargin;
             if( tiles & TileSet::Top ) corners |= CornersTopRight;
             if( tiles & TileSet::Bottom ) corners |= CornersBottomRight;
         }
@@ -828,23 +980,10 @@ namespace Oxygen
     void Style::renderScrollBarHandle(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, const StyleOptions& options ) const
+        gint x, gint y, gint w, gint h,
+        const StyleOptions& options,
+        const AnimationData& data )
     {
-
-        // store colors
-        const Palette::Group group( options&Disabled ? Palette::Disabled : Palette::Active );
-        const ColorUtils::Rgba color( settings().palette().color( group, Palette::Button ) );
-        const ColorUtils::Rgba light( ColorUtils::lightColor( color ) );
-        const ColorUtils::Rgba mid( ColorUtils::midColor( color ) );
-        const ColorUtils::Rgba dark( ColorUtils::darkColor( color ) );
-        const ColorUtils::Rgba shadow( ColorUtils::shadowColor( color ) );
-        const ColorUtils::Rgba base( ColorUtils::mix( dark, shadow, 0.5 ) );
-
-        // glow color
-        ColorUtils::Rgba glow;
-        if( settings().scrollBarColored() ) glow = ColorUtils::mix( dark, shadow, 0.5 );
-        else if( options&Hover ) glow = settings().palette().color( Palette::Hover );
-        else glow = base;
 
         // vertical
         const bool vertical( options&Vertical );
@@ -859,119 +998,47 @@ namespace Oxygen
         // context
         Cairo::Context context( window, clipRect );
 
-        // glow, shadow
+        // store colors
+        const Palette::Group group( options&Disabled ? Palette::Disabled : Palette::Active );
+        const ColorUtils::Rgba color( settings().palette().color( group, Palette::Button ) );
+
+        const double radius( 3.5 );
+
+        // glow color
+        ColorUtils::Rgba glow;
+        const ColorUtils::Rgba shadow( ColorUtils::alphaColor( ColorUtils::shadowColor( color ), 0.4 ) );
+        const ColorUtils::Rgba hovered( settings().palette().color( Palette::Hover ) );
+        if( data._mode == AnimationHover ) glow = ColorUtils::mix( shadow, hovered, data._opacity );
+        else if( options&Hover ) glow = hovered;
+        else glow = shadow;
+
+        helper().scrollHandle( color, glow ).
+            render( context, xf-3, yf-3, wf+6, hf+6, TileSet::Full );
+
+        // contents
+        const ColorUtils::Rgba mid( ColorUtils::midColor( color ) );
+        Cairo::Pattern pattern( cairo_pattern_create_linear( 0, yf, 0, yf+hf ) );
+        cairo_pattern_add_color_stop( pattern, 0, color );
+        cairo_pattern_add_color_stop( pattern, 1, mid );
+        cairo_set_source( context, pattern );
+        cairo_rounded_rectangle( context, xf+1, yf+1, wf-2, hf-2, radius - 2 );
+        cairo_fill( context );
+
+        // bevel pattern
         {
-            cairo_rounded_rectangle( context, xf-0.8, yf-0.8, wf+1.6, hf+1.6, 3 );
-            cairo_set_source( context, ColorUtils::alphaColor( glow, 0.6 ) );
-            cairo_fill( context );
-
-            cairo_rounded_rectangle( context, xf-1.2, yf-0.8, wf+2.4, hf+1.6, 3 );
-            cairo_set_source( context, ColorUtils::alphaColor( glow, 0.3 ) );
-            cairo_set_line_width( context, 1.5 );
-            cairo_stroke( context );
-
-        }
-
-        // colored background
-        if( settings().scrollBarColored() )
-        {
-            if( options&Hover ) cairo_set_source( context, settings().palette().color( Palette::Hover ) );
-            else cairo_set_source( context, color );
-
-            cairo_rounded_rectangle( context, xf, yf, wf, hf, 2 );
-            cairo_fill( context );
-        }
-
-
-        // slider pattern
-        {
-
-            Cairo::Pattern pattern;
-            if( vertical ) pattern.set( cairo_pattern_create_linear( xf, 0, xf+wf, 0 ) );
-            else pattern.set( cairo_pattern_create_linear( 0, yf, 0, yf+hf ) );
-
-            if( settings().scrollBarColored() )
-            {
-
-                cairo_pattern_add_color_stop( pattern, 0, ColorUtils::alphaColor( light, 0.6 ) );
-                cairo_pattern_add_color_stop( pattern, 0.3, ColorUtils::alphaColor( dark, 0.3 ) );
-                cairo_pattern_add_color_stop( pattern, 1.0, ColorUtils::alphaColor( light, 0.8 ) );
-
-            } else {
-
-                cairo_pattern_add_color_stop( pattern, 0, color );
-                cairo_pattern_add_color_stop( pattern, 1, mid );
-
-            }
-
-            cairo_set_source( context, pattern );
-            cairo_rounded_rectangle( context, xf, yf, wf, hf, 2 );
-            cairo_fill( context );
-
-        }
-
-        // pattern
-        if( settings().scrollBarBevel() )
-        {
-
+            const ColorUtils::Rgba light( ColorUtils::lightColor( color ) );
             Cairo::Pattern pattern;
             if( vertical ) pattern.set( cairo_pattern_create_linear( 0, 0, 0, 30 ) );
             else pattern.set( cairo_pattern_create_linear( 0, 0, 30, 0 ) );
             cairo_pattern_set_extend( pattern, CAIRO_EXTEND_REFLECT );
-            if( settings().scrollBarColored() )
-            {
 
-                cairo_pattern_add_color_stop( pattern, 0, ColorUtils::alphaColor( shadow, 0.15 ) );
-                cairo_pattern_add_color_stop( pattern, 1.0, ColorUtils::alphaColor( light, 0.15 ) );
-
-            } else {
-
-                cairo_pattern_add_color_stop( pattern, 0, ColorUtils::alphaColor( shadow, 0.1 ) );
-                cairo_pattern_add_color_stop( pattern, 1.0, ColorUtils::alphaColor( light, 0.1 ) );
-
-            }
+            cairo_pattern_add_color_stop( pattern, 0, ColorUtils::Rgba::transparent() );
+            cairo_pattern_add_color_stop( pattern, 1.0, ColorUtils::alphaColor( light, 0.1 ) );
 
             cairo_set_source( context, pattern );
-            cairo_rounded_rectangle( context, xf, yf, wf, hf, 2 );
+            if( vertical ) cairo_rectangle( context, xf+3, yf, wf-6, hf );
+            else cairo_rectangle( context, xf, yf+3, wf, hf-6 );
             cairo_fill( context );
-
-        }
-
-        // bevel
-        if( !settings().scrollBarColored() )
-        {
-            Cairo::Pattern pattern;
-            if( vertical ) pattern.set( cairo_pattern_create_linear( 0, yf, 0, yf+hf ) );
-            else pattern.set( cairo_pattern_create_linear( xf, 0, xf+wf, 0 ) );
-
-            cairo_pattern_add_color_stop( pattern, 0, ColorUtils::alphaColor( light, 0 ) );
-            cairo_pattern_add_color_stop( pattern, 0.5, light );
-            cairo_pattern_add_color_stop( pattern, 1.0, ColorUtils::alphaColor( light, 0 ) );
-            cairo_set_source( context, pattern );
-            cairo_set_line_width( context, 1 );
-
-            if( vertical )
-            {
-                cairo_move_to( context, xf + 0.5, yf + 0.5 );
-                cairo_line_to( context, xf + 0.5, yf + hf -1.5 );
-                cairo_stroke( context );
-
-                cairo_move_to( context, xf + wf - 0.5, yf + 0.5 );
-                cairo_line_to( context, xf + wf - 0.5, yf + hf - 0.5 );
-                cairo_stroke( context );
-
-            } else {
-
-                cairo_move_to( context, xf + 0.5, yf + 0.5 );
-                cairo_line_to( context, xf + wf - 0.5, yf + 0.5 );
-                cairo_stroke( context );
-
-                cairo_move_to( context, xf + 0.5, yf + hf - 0.5 );
-                cairo_line_to( context, xf + wf - 0.5, yf + hf - 0.5 );
-                cairo_stroke( context );
-
-            }
-
         }
 
     }
@@ -1064,8 +1131,8 @@ namespace Oxygen
             {
 
                 // window is active - it's a glow, not a shadow
-                ColorUtils::Rgba frameColor( settings().palette().color( Palette::ActiveWindowBackground ) );
-                ColorUtils::Rgba glow=ColorUtils::mix(ColorUtils::Rgba(0.5,0.5,0.5),frameColor,0.7);
+                const ColorUtils::Rgba frameColor( settings().palette().color( Palette::ActiveWindowBackground ) );
+                const ColorUtils::Rgba glow = ColorUtils::mix(ColorUtils::Rgba(0.5,0.5,0.5),frameColor,0.7);
                 cairo_set_source(context,glow);
 
                 const double radius( 11*0.5 );
@@ -1173,6 +1240,7 @@ namespace Oxygen
         GdkRectangle* clipRect,
         gint x, gint y, gint w, gint h,
         const StyleOptions& options,
+        const AnimationData& animationData,
         TileSet::Tiles tiles
         )
     {
@@ -1181,7 +1249,7 @@ namespace Oxygen
         const Palette::Group group( options&Disabled ? Palette::Disabled : Palette::Active );
 
         // glow color (depending on hover/glow
-        const ColorUtils::Rgba glow( slabShadowColor( options ) );
+        const ColorUtils::Rgba glow( slabShadowColor( options, animationData ) );
 
         if( options & Flat )
         {
@@ -1190,8 +1258,22 @@ namespace Oxygen
 
                 Cairo::Context context( window, clipRect );
                 const ColorUtils::Rgba base( color( group, Palette::Window, options ) );
-                if( glow.isValid() ) helper().holeFocused( base, glow, 0, 7 ).render( context, x, y, w, h );
-                else helper().hole( base, 0, 7 ).render( context, x, y, w, h );
+
+                const double bias( 0.75 );
+                double opacity( 1.0 );
+                if( glow.isValid() ) opacity -= bias*glow.alpha();
+
+                // fill hole
+                ColorUtils::Rgba color( ColorUtils::midColor( base ) );
+                color = ColorUtils::alphaColor( color, opacity );
+                cairo_save( context );
+                cairo_set_source( context, color );
+                cairo_rounded_rectangle( context, x+1, y+1, w-2, h-2, 3.5 );
+                cairo_fill( context );
+                cairo_restore( context );
+
+                if( glow.isValid() ) helper().holeFocused( base, glow, 7, true ).render( context, x, y, w, h );
+                else helper().hole( base, 7, true ).render( context, x, y, w, h );
 
             } else if( glow.isValid() ) {
 
@@ -1259,15 +1341,11 @@ namespace Oxygen
         if( options&Sunken )
         {
 
-            helper().slabSunken( base, 0 ).render( context, x, y, w, h, tiles );
-
-        } else if( glow.isValid() ) {
-
-            helper().slabFocused( base, glow, 0 ).render( context, x, y, w, h, tiles );
+            helper().slabSunken( base ).render( context, x, y, w, h, tiles );
 
         } else {
 
-            helper().slab( base, 0 ).render( context, x, y, w, h, tiles );
+            helper().slab( base, glow, 0 ).render( context, x, y, w, h, tiles );
 
         }
 
@@ -1277,7 +1355,9 @@ namespace Oxygen
     void Style::renderSlab(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, const Gtk::Gap& gap, const StyleOptions& options )
+        gint x, gint y, gint w, gint h, const Gtk::Gap& gap,
+        const StyleOptions& options,
+        const AnimationData& animationData )
     {
 
         // define colors
@@ -1298,7 +1378,7 @@ namespace Oxygen
         // create context
         Cairo::Context context( window, clipRect );
         generateGapMask( context, x, y, w, h, gap );
-        renderSlab( context, x, y, w, h, base, options, TileSet::Ring );
+        renderSlab( context, x, y, w, h, base, options, animationData, TileSet::Ring );
 
     }
 
@@ -1331,7 +1411,7 @@ namespace Oxygen
         }
 
         // slab
-        helper().slabFocused( base, glow, 0 ).render( context, x, y, w, h );
+        helper().slab( base, glow, 0 ).render( context, x, y, w, h );
 
     }
 
@@ -1339,7 +1419,9 @@ namespace Oxygen
     void Style::renderCheckBox(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, GtkShadowType shadow, const StyleOptions& options )
+        gint x, gint y, gint w, gint h, GtkShadowType shadow,
+        const StyleOptions& options,
+        const AnimationData& animationData )
     {
 
         // define checkbox rect
@@ -1372,14 +1454,14 @@ namespace Oxygen
         if( options & Flat )
         {
 
-            helper().holeFlat( base, 0 ).render( context, child.x+1, child.y-1, child.width, child.height, TileSet::Full );
+            helper().holeFlat( base, 0, false ).render( context, child.x+1, child.y-1, child.width, child.height, TileSet::Full );
             cairo_translate( context, 0, -2 );
 
         } else {
 
             StyleOptions localOptions( options );
             localOptions &= ~Sunken;
-            renderSlab( context, child.x, child.y, child.width, child.height, base, localOptions );
+            renderSlab( context, child.x, child.y, child.width, child.height, base, localOptions, animationData );
 
         }
 
@@ -1481,7 +1563,9 @@ namespace Oxygen
     void Style::renderRadioButton(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, GtkShadowType shadow, const StyleOptions& options )
+        gint x, gint y, gint w, gint h, GtkShadowType shadow,
+        const StyleOptions& options,
+        const AnimationData& animationData )
     {
 
         // define checkbox rect
@@ -1521,10 +1605,11 @@ namespace Oxygen
 
         }
 
-        const ColorUtils::Rgba glow( slabShadowColor( options ) );
+        // glow
+        const ColorUtils::Rgba glow( slabShadowColor( options, animationData ) );
 
         // get the pixmap
-        const Cairo::Surface& surface( glow.isValid() ? helper().roundSlabFocused( base, glow, 0, tileSize ):helper().roundSlab( base, 0, tileSize ) );
+        const Cairo::Surface& surface( helper().roundSlab( base, glow, 0, tileSize ) );
 
         // create context
         Cairo::Context context( window, clipRect );
@@ -1581,7 +1666,9 @@ namespace Oxygen
     void Style::renderHole(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, const Gtk::Gap& gap, const StyleOptions& options,
+        gint x, gint y, gint w, gint h, const Gtk::Gap& gap,
+        const StyleOptions& options,
+        const AnimationData& animationData,
         TileSet::Tiles tiles )
     {
 
@@ -1606,22 +1693,9 @@ namespace Oxygen
 
         if( fill.isValid() ) tiles |= TileSet::Center;
 
-        if( enabled && (options & Focus) )
-        {
-
-            const ColorUtils::Rgba glow( settings().palette().color( Palette::Focus ) );
-            helper().holeFocused( base, fill, glow, 0, 7 ).render( context, x, y, w, h, tiles );
-
-        } else if( enabled && (options & Hover) ) {
-
-            const ColorUtils::Rgba glow( settings().palette().color( Palette::Hover ) );
-            helper().holeFocused( base, fill, glow, 0, 7 ).render( context, x, y, w, h, tiles );
-
-        } else {
-
-            helper().hole( base, fill, 0, 7 ).render( context, x, y, w, h, tiles );
-
-        }
+        const ColorUtils::Rgba glow( holeShadowColor( options, animationData ) );
+        if( glow.isValid() ) helper().holeFocused( base, fill, glow ).render( context, x, y, w, h, tiles );
+        else helper().hole( base, fill ).render( context, x, y, w, h, tiles );
 
     }
 
@@ -1634,6 +1708,42 @@ namespace Oxygen
 
         // do nothing if not enough room
         if( w < 9 || h < 9 )  return;
+
+        // define colors
+        ColorUtils::Rgba top;
+        ColorUtils::Rgba bottom;
+        if( options&Blend )
+        {
+
+            gint wh, wy;
+            Gtk::gdk_map_to_toplevel( window, 0L, &wy, 0L, &wh );
+            top = ColorUtils::backgroundColor( settings().palette().color( Palette::Window ), wh, y+wy );
+            bottom = ColorUtils::backgroundColor( settings().palette().color( Palette::Window ), wh, y+h+wy );
+
+        } else {
+
+            top = settings().palette().color( Palette::Window );
+            bottom = settings().palette().color( Palette::Window );
+
+        }
+
+        // create context, add mask, and render
+        Cairo::Context context( window, clipRect );
+        generateGapMask( context, x, y, w, h, gap );
+        helper().dockFrame( top, bottom ).render( context, x, y, w, h );
+    }
+
+    //____________________________________________________________________________________
+    void Style::renderGroupBoxFrame(
+        GdkWindow* window,
+        GtkWidget* widget,
+        GdkRectangle* clipRect,
+        gint x, gint y, gint w, gint h, const StyleOptions& options )
+    {
+
+        // register
+        if( widget )
+        { animations().groupBoxEngine().registerWidget( widget ); }
 
         // define colors
         ColorUtils::Rgba base;
@@ -1650,10 +1760,9 @@ namespace Oxygen
 
         }
 
-        // create context, add mask, and render
         Cairo::Context context( window, clipRect );
-        generateGapMask( context, x, y, w, h, gap );
-        helper().dockFrame( base, w ).render( context, x, y, w, h );
+        renderGroupBox( context, base, x, y, w, h, options );
+
     }
 
     //____________________________________________________________________________________
@@ -1661,7 +1770,9 @@ namespace Oxygen
         GdkWindow* window,
         GdkRectangle* clipRect,
         GtkWidget* widget,
-        gint x, gint y, gint w, gint h, const StyleOptions& options )
+        gint x, gint y, gint w, gint h,
+        const StyleOptions& options,
+        const AnimationData& data )
     {
         ColorUtils::Rgba base;
 
@@ -1696,6 +1807,14 @@ namespace Oxygen
             else color = ColorUtils::mix( color, ColorUtils::tint( color, settings().palette().color( Palette::Hover ), 0.6 ) );
 
         }
+
+        // apply animation data
+        if( data._mode == AnimationHover )
+        {
+            if( data._opacity > 0 ) color = ColorUtils::alphaColor( color, data._opacity );
+            else return;
+        }
+
 
         if( isInMenuBar )
         {
@@ -1807,6 +1926,7 @@ namespace Oxygen
         gint x, gint y, gint w, gint h,
         QtSettings::ArrowSize arrowSize,
         const StyleOptions& options,
+        const AnimationData& data,
         Palette::Role role ) const
     {
 
@@ -1816,6 +1936,10 @@ namespace Oxygen
         // retrieve colors
         ColorUtils::Rgba base;
         if( options&Disabled ) base = settings().palette().color( Palette::Disabled, role );
+        else if( data._mode == AnimationHover ) base = ColorUtils::mix(
+            settings().palette().color( Palette::Active, role ),
+            settings().palette().color( Palette::Hover ),
+            data._opacity );
         else if( options&Hover ) base = settings().palette().color( Palette::Hover );
         else base = settings().palette().color( Palette::Active, role );
 
@@ -1917,11 +2041,20 @@ namespace Oxygen
         const bool vertical( options & Vertical );
         GdkRectangle parent = { x, y, w, h };
 
-        GdkRectangle child = { 0, 0, vertical ? Slider_GrooveWidth:w, vertical ? h:Slider_GrooveWidth };
+        GdkRectangle child;
+        if( vertical ) child = Gtk::gdk_rectangle( 0, 0, Slider_GrooveWidth, h );
+        else child = Gtk::gdk_rectangle( 0, 0, w, Slider_GrooveWidth );
         centerRect( &parent, &child );
 
+        if( !vertical )
+        {
+            // more adjustment needed due to contrast pixel
+            child.y += 1;
+            child.height -= 1;
+        }
+
         Cairo::Context context( window, clipRect );
-        helper().groove( base, 0 ).render( context, child.x, child.y, child.width, child.height );
+        helper().scrollHole( base, vertical, true ).render( context, child.x, child.y, child.width, child.height, TileSet::Full );
 
     }
 
@@ -1929,7 +2062,9 @@ namespace Oxygen
     void Style::renderSliderHandle(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, const StyleOptions& options )
+        gint x, gint y, gint w, gint h,
+        const StyleOptions& options,
+        const AnimationData& animationData )
     {
 
         // define colors
@@ -1950,7 +2085,20 @@ namespace Oxygen
 
         // render slab
         Cairo::Context context( window, clipRect );
-        renderSlab( context, x, y, w, h, base, options );
+
+        GdkRectangle parent = { x, y, w, h };
+        GdkRectangle child = {0, 0, 21, 21 };
+        centerRect( &parent, &child );
+
+        x = child.x;
+        y = child.y;
+
+        const ColorUtils::Rgba glow( slabShadowColor( options, animationData ) );
+        const Cairo::Surface& surface( helper().sliderSlab( base, glow, (options&Sunken), 0 ) );
+        cairo_translate( context, x, y );
+        cairo_rectangle( context, 0, 0, child.width, child.height );
+        cairo_set_source_surface( context, surface, 0, 0 );
+        cairo_fill( context );
 
     }
 
@@ -2037,7 +2185,8 @@ namespace Oxygen
         gint x, gint y, gint w, gint h,
         GtkPositionType side,
         const StyleOptions& options,
-        TabOptions tabOptions
+        const TabOptions& tabOptions,
+        const AnimationData& data
         )
     {
 
@@ -2050,8 +2199,8 @@ namespace Oxygen
 
             switch( settings().tabStyle() )
             {
-                case QtSettings::TS_SINGLE: return renderInactiveTab_Single( window, clipRect, x, y, w, h, side, options, tabOptions );
-                case QtSettings::TS_PLAIN: return renderInactiveTab_Plain( window, clipRect, x, y, w, h, side, options, tabOptions );
+                case QtSettings::TS_SINGLE: return renderInactiveTab_Single( window, clipRect, x, y, w, h, side, options, tabOptions, data );
+                case QtSettings::TS_PLAIN: return renderInactiveTab_Plain( window, clipRect, x, y, w, h, side, options, tabOptions, data );
                 default: return;
             }
 
@@ -2067,7 +2216,7 @@ namespace Oxygen
         GtkPositionType side,
         Gtk::Gap gap,
         const StyleOptions& options,
-        TabOptions tabOptions
+        const TabOptions& tabOptions
         )
     {
 
@@ -2120,7 +2269,9 @@ namespace Oxygen
     void Style::renderTabBarFrame(
         GdkWindow* window,
         GdkRectangle* clipRect,
-        gint x, gint y, gint w, gint h, const Gtk::Gap& gap, const StyleOptions& options )
+        gint x, gint y, gint w, gint h,
+        const Gtk::Gap& gap,
+        const StyleOptions& options )
     {
 
         // define colors
@@ -2129,7 +2280,7 @@ namespace Oxygen
         // create context
         Cairo::Context context( window, clipRect );
         generateGapMask( context, x, y, w, h, gap );
-        renderSlab( context, x, y, w, h, base, options, TileSet::Ring );
+        renderSlab( context, x, y, w, h, base, options );
 
     }
 
@@ -2140,6 +2291,7 @@ namespace Oxygen
         gint x, gint y, gint w, gint h,
         GtkExpanderStyle style,
         const StyleOptions& options,
+        const AnimationData& data,
         Palette::Role role
         ) const
     {
@@ -2147,6 +2299,10 @@ namespace Oxygen
         // retrieve colors
         ColorUtils::Rgba base;
         if( options&Disabled ) base = settings().palette().color( Palette::Disabled, role );
+        else if( data._mode == AnimationHover ) base = ColorUtils::mix(
+            settings().palette().color( Palette::Active, role ),
+            settings().palette().color( Palette::Hover ),
+            data._opacity );
         else if( options&Hover ) base = settings().palette().color( Palette::Hover );
         else base = settings().palette().color( Palette::Active, role );
 
@@ -2179,52 +2335,295 @@ namespace Oxygen
     }
 
     //__________________________________________________________________
-    void Style::drawWindowDecoration( cairo_t* context, WinDeco::Options wopt, gint x, gint y, gint w, gint h )
+    void Style::renderWindowDecoration( cairo_t* context, WinDeco::Options wopt, gint x, gint y, gint w, gint h, const gchar** windowStrings, gint titleIndentLeft, gint titleIndentRight, bool gradient )
     {
         bool hasAlpha( wopt & WinDeco::Alpha );
         bool drawResizeHandle( !(wopt & WinDeco::Shaded) && (wopt & WinDeco::Resizable) );
         bool isMaximized( wopt & WinDeco::Maximized );
 
-        // first draw to an offscreen surface, then render it on the target, having clipped the corners if hasAlpha==TRUE
-        Cairo::Surface surface( cairo_surface_create_similar( cairo_get_target(context), CAIRO_CONTENT_COLOR_ALPHA, w, h ) );
-        {
-
-            // create context to paint on surface
-            Cairo::Context context( surface );
-            renderWindowBackground( context, 0L, 0L, 0L, x, y, w, h );
-
-            StyleOptions options( hasAlpha ? Alpha : Blend );
-
-            // focus
-            if(wopt & WinDeco::Active) options|=Focus;
-
-            if( !isMaximized )
-            { drawFloatFrame( context, 0L, 0L, x, y, w, h, options, Palette::InactiveWindowBackground ); }
-
-            if( drawResizeHandle )
-            {
-                ColorUtils::Rgba base( settings().palette().color( Palette::Window ) );
-                renderWindowDots( context, x, y, w, h, base, wopt);
-            }
-
-        }
-
-        // now that everything is rendered, prepare transparent background, clip the rounded rect, then blit the windeco to context
-        cairo_save( context );
-        cairo_set_source_rgba( context, 0, 0, 0, 0 );
-        cairo_set_operator( context, CAIRO_OPERATOR_SOURCE );
-        cairo_paint( context );
-        cairo_set_operator( context, CAIRO_OPERATOR_OVER );
         if( hasAlpha )
         {
             // cut round corners using alpha
             cairo_rounded_rectangle(context,x,y,w,h,3.5);
             cairo_clip(context);
         }
-        cairo_set_source_surface( context, surface, 0, 0 );
-        cairo_paint( context );
-        cairo_restore( context );
+        if( gradient )
+            renderWindowBackground( context, 0L, 0L, 0L, x, y, w, h );
+        else
+        {
+            cairo_set_source( context, settings().palette().color( Palette::Active, Palette::Window ) );
+            cairo_paint( context );
+        }
 
+        StyleOptions options( hasAlpha ? Alpha : Blend );
+
+        options|=Round;
+
+        // focus
+        if(wopt & WinDeco::Active) options|=Focus;
+
+        if( !isMaximized )
+        { drawFloatFrame( context, 0L, 0L, x, y, w, h, options, Palette::InactiveWindowBackground ); }
+
+        if( drawResizeHandle )
+        {
+            ColorUtils::Rgba base( settings().palette().color( Palette::Window ) );
+            renderWindowDots( context, x, y, w, h, base, wopt);
+        }
+
+        if(windowStrings)
+        {
+            // caption is drawn in drawWindowDecoration
+            if( windowStrings[1] )
+            {
+                // TODO: use WMCLASS and caption to enable per-window style exceptions
+            }
+        }
+    }
+
+    //__________________________________________________________________
+    void Style::drawWindowDecoration( cairo_t* context, WinDeco::Options wopt, gint x, gint y, gint w, gint h, const gchar** windowStrings, gint titleIndentLeft, gint titleIndentRight )
+    {
+        /*
+           (any element of windowStrings[] may be NULL - will be understood as "")
+           windowStrings may also be NULL
+
+           elements:
+            windowStrings[0]: caption
+            windowStrings[1]: WMCLASS
+            windowStrings[2]: (gpointer)XID
+        */
+        /*
+           caches layout:
+               left&right border height: h
+               top&bottom border width: w-BorderLeft-BorderRight
+        */
+
+        // enable gradient if XID is not passed
+        bool gradient=true;
+
+        if( windowStrings && windowStrings[2] )
+        {
+            Window window((Window)windowStrings[2]);
+            Display* display( GDK_DISPLAY_XDISPLAY(gdk_display_get_default()) );
+            Atom _backgroundGradientAtom = XInternAtom( display, "_KDE_OXYGEN_BACKGROUND_GRADIENT", False);
+            if(_backgroundGradientAtom)
+            {
+                Atom type_ret;
+                int format_ret;
+                unsigned long items_ret;
+                unsigned long after_ret;
+                unsigned char *prop_data = 0;
+
+                if( !(XGetWindowProperty(display, window, _backgroundGradientAtom, 0, G_MAXLONG, False,
+                        XA_CARDINAL, &type_ret, &format_ret, &items_ret, &after_ret, &prop_data) == Success
+                            && items_ret == 1
+                            && format_ret == 32) )
+                {
+                    // if the window doesn't have this property set, it's likely
+                    // non-oxygenized, thus shouldn't have windeco bg gradient
+                    gradient=false;
+                }
+            }
+        }
+
+        WindecoBorderKey key(wopt,w,h,gradient);
+
+        {
+            // draw left border with cache
+            Cairo::Surface left( helper().windecoLeftBorderCache().value(key) );
+            int sw=WinDeco::getMetric(WinDeco::BorderLeft);
+            if(sw)
+            {
+
+                if( !left )
+                {
+
+                    #if OXYGEN_DEBUG
+                    std::cerr<<"drawWindowDecoration: drawing left border; width: " << w << "; height: " << h << "; wopt: " << wopt << std::endl;
+                    #endif
+                    left=helper().createSurface(sw,h);
+
+                    Cairo::Context context(left);
+                    renderWindowDecoration( context, wopt, 0, 0, w, h, windowStrings, titleIndentLeft, titleIndentRight, gradient);
+
+                    helper().windecoLeftBorderCache().insert(key,left);
+
+                } else {
+
+                    #if OXYGEN_DEBUG
+                    std::cerr << "drawWindowDecoration: using saved left border" << std::endl;
+                    #endif
+
+                }
+
+                cairo_set_source_surface(context, left, x, y);
+                cairo_rectangle(context,x,y,sw,h);
+                cairo_fill(context);
+            }
+        }
+
+        {
+            // draw right border with cache
+            Cairo::Surface right( helper().windecoRightBorderCache().value(key) );
+            int sw=WinDeco::getMetric(WinDeco::BorderRight);
+            if(sw)
+            {
+
+                if( !right )
+                {
+
+                    #if OXYGEN_DEBUG
+                    std::cerr<<"drawWindowDecoration: drawing right border; width: " << w << "; height: " << h << "; wopt: " << wopt << std::endl;
+                    #endif
+
+                    right=helper().createSurface(sw,h);
+
+                    Cairo::Context context(right);
+                    renderWindowDecoration( context, wopt, -(w-sw), 0, w, h, windowStrings, titleIndentLeft, titleIndentRight, gradient );
+
+                    helper().windecoRightBorderCache().insert(key,right);
+
+                } else {
+
+                    #if OXYGEN_DEBUG
+                    std::cerr << "drawWindowDecoration: using saved right border" << std::endl;
+                    #endif
+
+                }
+
+                cairo_set_source_surface(context, right, x+w-sw, y);
+                cairo_rectangle(context,x+w-sw,y,sw,h);
+                cairo_fill(context);
+            }
+        }
+
+        {
+            // draw top border with cache
+            Cairo::Surface top( helper().windecoTopBorderCache().value(key) );
+            int left=WinDeco::getMetric(WinDeco::BorderLeft);
+            int right=WinDeco::getMetric(WinDeco::BorderRight);
+            int sh=WinDeco::getMetric(WinDeco::BorderTop);
+            int sw=w-left-right;
+            if(sh && sw)
+            {
+                if( !top )
+                {
+
+                    #if OXYGEN_DEBUG
+                    std::cerr<<"drawWindowDecoration: drawing top border; width: " << w << "; height: " << h << "; wopt: " << wopt << std::endl;
+                    #endif
+                    top=helper().createSurface(sw,sh);
+
+                    Cairo::Context context(top);
+                    renderWindowDecoration( context, wopt, -left, 0, w, h, windowStrings, titleIndentLeft, titleIndentRight, gradient );
+
+                    helper().windecoTopBorderCache().insert(key,top);
+
+                } else {
+
+                    #if OXYGEN_DEBUG
+                    std::cerr << "drawWindowDecoration: using saved top border" << std::endl;
+                    #endif
+
+                }
+
+                cairo_set_source_surface(context, top, x+left, y);
+                cairo_rectangle(context,x+left,y,sw,sh);
+                cairo_fill(context);
+
+                // caption shouldn't be saved in the cache
+                if( windowStrings && windowStrings[0] )
+                {
+                    // draw caption
+                    const gchar* &caption(windowStrings[0]);
+                    const FontInfo& font( settings().WMFont() );
+                    gint layoutWidth=w-(titleIndentLeft+titleIndentRight);
+                    if( font.isValid() && layoutWidth>0 )
+                    {
+                        PangoFontDescription* fdesc( pango_font_description_new() );
+                        const Palette::Group group( wopt & WinDeco::Active ? Palette::Active : Palette::Disabled );
+                        const int H=WinDeco::getMetric(WinDeco::BorderTop);
+                        int textHeight;
+
+                        pango_font_description_set_family( fdesc, font.family().c_str() );
+                        pango_font_description_set_weight( fdesc, PangoWeight( (font.weight()+2)*10 ) );
+                        pango_font_description_set_style( fdesc, font.italic() ? PANGO_STYLE_ITALIC : PANGO_STYLE_NORMAL );
+                        pango_font_description_set_size( fdesc, int(font.size()*PANGO_SCALE) );
+
+                        PangoLayout* layout( pango_cairo_create_layout(context) );
+                        pango_layout_set_text( layout,caption, -1 );
+                        pango_layout_set_font_description( layout, fdesc );
+                        pango_layout_set_width( layout, layoutWidth*PANGO_SCALE );
+                        pango_layout_set_ellipsize( layout, PANGO_ELLIPSIZE_END );
+                        pango_layout_set_alignment( layout, settings().TitleAlignment() );
+                        pango_layout_get_pixel_size( layout, NULL, &textHeight );
+
+                        cairo_save( context );
+
+                        cairo_set_source( context, settings().palette().color( group, Palette::WindowText ) );
+                        cairo_translate( context, x+titleIndentLeft, y+(H-textHeight)/2. );
+                        pango_cairo_update_layout( context, layout );
+                        pango_cairo_show_layout( context, layout );
+
+                        cairo_restore( context );
+
+                        g_object_unref(layout);
+                        pango_font_description_free(fdesc);
+                    }
+                }
+            }
+        }
+
+        {
+            // draw bottom border with cache
+            Cairo::Surface bottom( helper().windecoBottomBorderCache().value(key) );
+            int left=WinDeco::getMetric(WinDeco::BorderLeft);
+            int right=WinDeco::getMetric(WinDeco::BorderRight);
+            int sh=WinDeco::getMetric(WinDeco::BorderBottom);
+            int sw=w-left-right;
+            int Y=y+h-sh;
+            if(sh && sw)
+            {
+                if( !bottom)
+                {
+
+                    #if OXYGEN_DEBUG
+                    std::cerr<<"drawWindowDecoration: drawing bottom border; width: " << w << "; height: " << h << "; wopt: " << wopt << std::endl;
+                    #endif
+                    bottom=helper().createSurface(sw,sh);
+
+                    Cairo::Context context(bottom);
+                    renderWindowDecoration( context, wopt, -left, y-Y, w, h, windowStrings, titleIndentLeft, titleIndentRight, gradient );
+
+                    helper().windecoBottomBorderCache().insert(key,bottom);
+
+                } else {
+
+                    #if OXYGEN_DEBUG
+                    std::cerr << "drawWindowDecoration: using saved bottom border" << std::endl;
+                    #endif
+
+                }
+
+                cairo_set_source_surface(context, bottom, x+left, Y);
+                cairo_rectangle(context,x+left,Y,sw,sh);
+                cairo_fill(context);
+            }
+        }
+    }
+
+    //__________________________________________________________________
+    void Style::drawWindowShadow( cairo_t* context, WinDeco::Options wopt, gint x, gint y, gint w, gint h )
+    {
+        cairo_set_source_rgba( context, 0, 0, 0, 0 );
+        cairo_set_operator( context, CAIRO_OPERATOR_SOURCE );
+        cairo_paint( context );
+        cairo_set_operator( context, CAIRO_OPERATOR_OVER );
+
+        WindowShadow shadow(settings(), helper());
+        shadow.setWindowState(wopt);
+        shadow.render(context, x,y,w,h);
     }
 
     //__________________________________________________________________
@@ -2298,13 +2697,20 @@ namespace Oxygen
     }
 
     //____________________________________________________________________________________
+    void Style::setBackgroundSurface( const std::string& filename )
+    {
+        if( _backgroundSurface.isValid() ) _backgroundSurface.free();
+        _backgroundSurface.set( cairo_image_surface_create_from_png( filename.c_str() ) );
+    }
+
+    //____________________________________________________________________________________
     void Style::renderActiveTab(
         GdkWindow* window,
         GdkRectangle* clipRect,
         gint x, gint y, gint w, gint h,
         GtkPositionType side,
         const StyleOptions& options,
-        TabOptions tabOptions
+        const TabOptions& tabOptions
         )
     {
 
@@ -2481,7 +2887,8 @@ namespace Oxygen
         gint x, gint y, gint w, gint h,
         GtkPositionType side,
         const StyleOptions& options,
-        TabOptions tabOptions
+        const TabOptions& tabOptions,
+        const AnimationData& data
         )
     {
 
@@ -2573,17 +2980,11 @@ namespace Oxygen
         }
 
         // render tab
-        const ColorUtils::Rgba glow( settings().palette().color( Palette::Hover ) );
-        if( (options&Hover) )
-        {
+        ColorUtils::Rgba glow;
+        if( data._mode == AnimationHover ) glow = ColorUtils::alphaColor( settings().palette().color( Palette::Hover ), data._opacity );
+        else if( options&Hover ) glow = settings().palette().color( Palette::Hover );
 
-            helper().slabFocused( base, glow, 0 ).render( context, tabSlab._x, tabSlab._y, tabSlab._w, tabSlab._h, tabSlab._tiles );
-
-        } else {
-
-            helper().slab( base, 0 ).render( context, tabSlab._x, tabSlab._y, tabSlab._w, tabSlab._h, tabSlab._tiles );
-
-        }
+        helper().slab( base, glow ).render( context, tabSlab._x, tabSlab._y, tabSlab._w, tabSlab._h, tabSlab._tiles );
 
         // adjust rect for filling
         SlabRect fillSlab( tabSlab );
@@ -2640,14 +3041,14 @@ namespace Oxygen
         for( SlabRect::List::const_iterator iter = slabs.begin(); iter != slabs.end(); ++iter )
         {
 
-            if( (iter->_options&Hover) && (options&Hover) )
+            if( (iter->_options&Hover) && glow.isValid() )
             {
 
-                helper().slabFocused(base, glow, 0).render( context, iter->_x, iter->_y, iter->_w, iter->_h, iter->_tiles );
+                helper().slab(base, glow).render( context, iter->_x, iter->_y, iter->_w, iter->_h, iter->_tiles );
 
             } else {
 
-                helper().slab(base, 0).render( context, iter->_x, iter->_y, iter->_w, iter->_h, iter->_tiles );
+                helper().slab(base).render( context, iter->_x, iter->_y, iter->_w, iter->_h, iter->_tiles );
 
             }
         }
@@ -2660,7 +3061,8 @@ namespace Oxygen
         gint x, gint y, gint w, gint h,
         GtkPositionType side,
         const StyleOptions& options,
-        TabOptions tabOptions
+        const TabOptions& tabOptions,
+        const AnimationData& data
         )
     {
         // convenience flags
@@ -3005,47 +3407,151 @@ namespace Oxygen
         cairo_set_source( context, darkColor );
         cairo_stroke( context );
 
+        ColorUtils::Rgba glow;
+        if( data._mode == AnimationHover ) glow = ColorUtils::alphaColor( settings().palette().color( Palette::Hover ), data._opacity );
+        else if( options&Hover ) glow = settings().palette().color( Palette::Hover );
+
         for( SlabRect::List::const_iterator iter = slabs.begin(); iter != slabs.end(); ++iter )
-        {
-            // render tab
-            if( options&Hover )
-            {
-
-                const ColorUtils::Rgba glow( settings().palette().color( Palette::Hover ) );
-                helper().slabFocused(base, glow, 0).render( context, iter->_x, iter->_y, iter->_w, iter->_h, iter->_tiles );
-
-            } else {
-
-                helper().slab(base, 0).render( context, iter->_x, iter->_y, iter->_w, iter->_h, iter->_tiles );
-
-            }
-
-        }
+        { helper().slab(base, glow, 0).render( context, iter->_x, iter->_y, iter->_w, iter->_h, iter->_tiles ); }
 
     }
 
     //____________________________________________________________________________________
-    ColorUtils::Rgba Style::slabShadowColor( const StyleOptions& options ) const
+    ColorUtils::Rgba Style::slabShadowColor( const StyleOptions& options, const AnimationData& data ) const
     {
 
         // no glow when widget is disabled
         if( options&Disabled ) return ColorUtils::Rgba();
 
-        /*
-        for flat, un-sunken, hovered buttons, return Focus color, consistently with oxygen-qt
-        though this is not quite correct
-        */
-        else if( (options&Flat) && !(options&Sunken) && (options&(Hover|Focus)) ) return  settings().palette().color( Palette::Focus );
+        if( (options&Flat) && !(options&Sunken) )
+        {
 
-        // normal behavior in all other cases
-        else if( options & Hover ) return settings().palette().color( Palette::Hover );
-        else if( options & Focus ) return  settings().palette().color( Palette::Focus );
-        else return ColorUtils::Rgba();
+            /*
+            flat buttons have special handling of colors: hover and focus are both assigned
+            the hover color. This is consistent with oxygen-qt, though quite inconsistent with
+            other widgets.
+            */
+            if(
+                ( data._mode == AnimationHover && (options&Focus) ) ||
+                ( data._mode == AnimationFocus && (options&Hover) ) )
+            {
+                return settings().palette().color( Palette::Focus );
+
+            } else if( data._mode & (AnimationHover|AnimationFocus) ) {
+
+                return ColorUtils::alphaColor( settings().palette().color( Palette::Focus ), data._opacity );
+
+            } else if( options&(Focus|Hover) ) {
+
+                return settings().palette().color( Palette::Focus );
+
+            } else return ColorUtils::Rgba();
+
+        } else if( data._mode == AnimationHover ) {
+
+            if( options & Focus )
+            {
+                return ColorUtils::mix(
+                    settings().palette().color( Palette::Focus ),
+                    settings().palette().color( Palette::Hover ), data._opacity );
+
+            } else {
+
+                return ColorUtils::alphaColor( settings().palette().color( Palette::Hover ), data._opacity );
+
+            }
+
+        } else if( options&Hover ) {
+
+            return settings().palette().color( Palette::Hover );
+
+        } else if( data._mode == AnimationFocus ) {
+
+            return ColorUtils::alphaColor( settings().palette().color( Palette::Focus ), data._opacity );
+
+        } else if( options&Focus ) {
+
+            return settings().palette().color( Palette::Focus );
+
+        } else return ColorUtils::Rgba();
+
+    }
+
+    //____________________________________________________________________________________
+    ColorUtils::Rgba Style::holeShadowColor( const StyleOptions& options, const AnimationData& data ) const
+    {
+
+        // no glow when widget is disabled
+        if( options&Disabled ) return ColorUtils::Rgba();
+
+        if( data._mode == AnimationFocus && data._opacity >= 0 )
+        {
+
+            if( options & Hover )
+            {
+
+                return ColorUtils::mix(
+                    settings().palette().color( Palette::Hover ),
+                    settings().palette().color( Palette::Focus ), data._opacity );
+
+            } else return ColorUtils::alphaColor( settings().palette().color( Palette::Focus ), data._opacity );
+
+        } else if( options & Focus ) {
+
+            return settings().palette().color( Palette::Focus );
+
+        } else if( data._mode == AnimationHover && data._opacity >= 0 ) {
+
+            return ColorUtils::alphaColor( settings().palette().color( Palette::Hover ), data._opacity );
+
+        } else if( options & Hover ) {
+
+            return settings().palette().color( Palette::Hover );
+
+        } else return ColorUtils::Rgba();
 
     }
 
     //__________________________________________________________________
-    void Style::renderSlab( Cairo::Context& context, gint x, gint y, gint w, gint h, const ColorUtils::Rgba& base, const StyleOptions& options, TileSet::Tiles tiles )
+    void Style::renderGroupBox(
+        cairo_t* context,
+        const ColorUtils::Rgba& base,
+        gint x, gint y, gint w, gint h,
+        const StyleOptions& options )
+    {
+
+        cairo_push_group( context );
+        Cairo::Pattern pattern( cairo_pattern_create_linear( 0, y - h + 12, 0,  y + 2*h - 19 ) );
+        const ColorUtils::Rgba light( ColorUtils::lightColor( base ) );
+        cairo_pattern_add_color_stop( pattern, 0, ColorUtils::alphaColor( light, 0.4 ) );
+        cairo_pattern_add_color_stop( pattern, 1, ColorUtils::Rgba::transparent( light ) );
+        cairo_set_source( context, pattern );
+
+        if( !Style::instance().settings().applicationName().useFlatBackground( 0 ) )
+            helper().fillSlab( context, x, y, w, h );
+
+        if( !(options&NoFill) )
+        { helper().slope( base, 0.0 ).render( context, x, y, w, h ); }
+
+        cairo_pop_group_to_source( context );
+
+        Cairo::Pattern mask( cairo_pattern_create_linear( 0,  y + h - 19, 0,  y + h ) );
+        cairo_pattern_add_color_stop( mask, 0, ColorUtils::Rgba::black() );
+        cairo_pattern_add_color_stop( mask, 1.0, ColorUtils::Rgba::transparent() );
+        cairo_mask( context, mask );
+
+        return;
+
+    }
+
+    //__________________________________________________________________
+    void Style::renderSlab(
+        Cairo::Context& context,
+        gint x, gint y, gint w, gint h,
+        const ColorUtils::Rgba& base,
+        const StyleOptions& options,
+        const AnimationData& animationData,
+        TileSet::Tiles tiles )
     {
 
         // do nothing if not enough room
@@ -3092,16 +3598,15 @@ namespace Oxygen
 
             // calculate glow color
             const TileSet* tile;
-            ColorUtils::Rgba glow( slabShadowColor( options ) );
-            if( glow.isValid() ) tile = &helper().slabFocused( base, glow , 0);
-            else if( base.isValid() ) tile = &helper().slab( base, 0 );
+            const ColorUtils::Rgba glow( slabShadowColor( options, animationData ) );
+            if( glow.isValid() || base.isValid() ) tile = &helper().slab( base, glow , 0);
             else return;
 
             if( tile ) tile->render( context, x, y, w, h );
 
         } else if( base.isValid() ) {
 
-            helper().slabSunken( base, 0 ).render( context, x, y, w, h );
+            helper().slabSunken( base ).render( context, x, y, w, h );
 
         }
 
@@ -3167,7 +3672,7 @@ namespace Oxygen
     }
 
     //__________________________________________________________________
-    void Style::renderWindowDots(Cairo::Context& context, gint x, gint y, gint w, gint h, const ColorUtils::Rgba& color, WinDeco::Options wopt)
+    void Style::renderWindowDots(cairo_t* context, gint x, gint y, gint w, gint h, const ColorUtils::Rgba& color, WinDeco::Options wopt)
     {
         bool isMaximized( wopt & WinDeco::Maximized );
         bool hasAlpha( wopt & WinDeco::Alpha );

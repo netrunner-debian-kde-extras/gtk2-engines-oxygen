@@ -25,6 +25,7 @@
 #include "oxygengtkutils.h"
 #include "oxygenpalette.h"
 
+#include <iostream>
 #include <gtk/gtk.h>
 
 namespace Oxygen
@@ -62,6 +63,11 @@ namespace Oxygen
             Flags<StyleOption>( f )
         {}
 
+        //! constructor
+        StyleOptions( Flags<StyleOption> f):
+            Flags<StyleOption>( f )
+        {}
+
         //! constructor from widget
         StyleOptions( GtkWidget* widget, GtkStateType state, GtkShadowType shadow = GTK_SHADOW_NONE )
         {
@@ -82,8 +88,13 @@ namespace Oxygen
         /*! it is used to pass custom colors to painting routines */
         Palette::ColorSet _customColors;
 
+        //! streamer
+        friend std::ostream& operator << (std::ostream& out, const StyleOptions& options );
+
     };
 
 }
+
+OX_DECLARE_OPERATORS_FOR_FLAGS( Oxygen::StyleOptions )
 
 #endif

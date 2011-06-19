@@ -53,7 +53,9 @@ style "oxygen-default"
     GtkCheckMenuItem::indicator-size = 16
 
     GtkScale::slider-width = 23
-    GtkScale::slider-length = 15
+    GtkScale::slider-length = 21
+
+    GtkRange::activate-slider = 1
 
     GtkScrollbar::trough-border=1
     GtkScrollbar::stepper-size=12
@@ -78,10 +80,12 @@ class "*" style "oxygen-default"
 # entries
 # do not change unless also changing Entry_SideMargin in OxygenStyle.h
 style "oxygen-entry-margins" = "oxygen-default"
-{ xthickness = 5 }
+{
+    xthickness = 5
+    ythickness = 2
+}
 
 class "GtkEntry" style "oxygen-entry-margins"
-
 
 # menuitems padding
 style "oxygen-menubar" = "oxygen-default"
@@ -94,7 +98,10 @@ class "GtkMenuBar" style "oxygen-menubar"
 
 # menuitems padding
 style "oxygen-menubaritem" = "oxygen-default"
-{ xthickness = 3 }
+{
+    xthickness = 3
+    ythickness = 2
+}
 
 style "oxygen-menuitem" = "oxygen-default"
 {
@@ -145,6 +152,7 @@ style "oxygen-combobox" = "oxygen-default"
     # must set combobox frame x thickness to 0, otherwise there
     # is a dead area between combobox text and button
     xthickness = 0
+    ythickness = 2
 }
 
 style "oxygen-combobox-frame" = "oxygen-default"
@@ -168,12 +176,18 @@ style "oxygen-combobox-entry" = "oxygen-default"
 class "GtkComboBoxEntry" style "oxygen-combobox-entry"
 
 style "oxygen-combobox-entry-button" = "oxygen-combobox-entry"
-{ xthickness = 2 }
+{
+    ythickness = 2
+    xthickness = 2
+}
 
 widget_class "*<GtkComboBoxEntry>.<GtkButton>" style "oxygen-combobox-entry-button"
 
 style "oxygen-combo-button" = "oxygen-combobox-entry"
-{ xthickness = 0 }
+{
+    xthickness = 0
+    ythickness = 2
+}
 
 widget_class "*<GtkCombo>.<GtkButton>" style "oxygen-combo-button"
 
@@ -188,7 +202,10 @@ class "GtkOptionMenu" style "oxygen-option-menu"
 
 # vertical separators need enough room
 style "oxygen-vseparator" = "oxygen-default"
-{ xthickness = 3 }
+{
+    xthickness = 3
+    ythickness = 2
+}
 
 class "GtkVSeparator" style "oxygen-vseparator"
 
@@ -202,7 +219,15 @@ style "oxygen-w2" = "oxygen-default"
 class "GtkScrolledWindow" style "oxygen-w2"
 class "GtkViewport" style "oxygen-w2"
 class "GtkFrame" style "oxygen-w2"
-class "GtkProgressBar" style "oxygen-w2"
+class "gtkmm__GtkSpinButton" style "oxygen-w2"
+
+# 1pixels thickness.
+style "oxygen-progressbar" = "oxygen-default"
+{
+    xthickness = 1
+    ythickness = 0
+}
+class "GtkProgressBar" style "oxygen-progressbar"
 
 # tree headers
 style "oxygen-header" = "oxygen-default"

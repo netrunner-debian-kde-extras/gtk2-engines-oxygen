@@ -47,6 +47,18 @@ namespace Oxygen
         return out;
     }
 
+    //! GtkContainer streamer
+    inline std::ostream& operator << (std::ostream& out, GtkContainer* container)
+    {
+        GList* children=gtk_container_get_children(container);
+        for(GList* child=g_list_first(children); child; child=g_list_next(child))
+        {
+            out << G_OBJECT_TYPE_NAME(child->data) << " ";
+        }
+        g_list_free(children);
+        return out;
+    }
+
     namespace Gtk
     {
 
@@ -58,6 +70,102 @@ namespace Oxygen
             RightButton = 2,
             MidButton = 3
         };
+
+        //@!name gdk utilities
+        //@{
+
+        //! returns OxygenRgba color from GdkColor
+        inline ColorUtils::Rgba gdk_get_color( const GdkColor& color )
+        {
+            return ColorUtils::Rgba(
+                double(color.red)/0xffff,
+                double(color.green)/0xffff,
+                double(color.blue)/0xffff );
+        }
+
+        //! map window origin to top level
+        /*!
+        x and y correspond to (0,0) maped to toplevel window;
+        w and h correspond to toplevel window frame size
+        */
+        bool gdk_window_map_to_toplevel( GdkWindow*, gint*, gint*, gint*, gint*, bool frame = false );
+
+        //! map widget origin to top level
+        /*!
+        x and y correspond to (0,0) maped to toplevel window;
+        w and h correspond to toplevel window frame size
+        */
+        bool gtk_widget_map_to_toplevel( GtkWidget*, gint*, gint*, gint*, gint*, bool frame = false );
+
+        //! map widget onto another (parent) widget
+        /*! second argument can be any parent in widget's ancestry tree */
+        bool gtk_widget_map_to_parent( GtkWidget*, GtkWidget*, gint*, gint*, gint*, gint* );
+
+        //! map window/widget origin to top level
+        inline bool gdk_map_to_toplevel( GdkWindow* window, GtkWidget* widget, gint* x, gint* y, gint* w, gint* h, bool frame = false )
+        {
+            if( window && GDK_IS_WINDOW( window ) ) return gdk_window_map_to_toplevel( window, x, y, w, h, frame );
+            else return gtk_widget_map_to_toplevel( widget, x, y, w, h, frame );
+        }
+
+        //! map window origin to top level
+        inline bool gdk_map_to_toplevel( GdkWindow* window, gint* x, gint* y, gint* w, gint* h, bool frame = false )
+        { return gdk_window_map_to_toplevel( window, x, y, w, h, frame ); }
+
+        //! translate origin of child window into parent
+        /*! returns true on success */
+        bool gdk_window_translate_origin( GdkWindow*, GdkWindow*, gint*, gint* );
+
+        //! get top level windows dimension
+        void gdk_toplevel_get_size( GdkWindow*, gint*, gint* );
+
+        //! get top level windows dimension
+        void gdk_toplevel_get_frame_size( GdkWindow*, gint*, gint* );
+
+        //! get position relatve to toplevel
+        void gdk_window_get_toplevel_origin( GdkWindow*, gint*, gint* );
+
+        //! add alpha channel to pixbuf
+        GdkPixbuf* gdk_pixbuf_set_alpha( const GdkPixbuf*, double );
+
+        //! changes the gamma value of an image
+        bool gdk_pixbuf_to_gamma( GdkPixbuf* pixbuf, double value );
+
+        //! resize pixbuf
+        GdkPixbuf* gdk_pixbuf_resize( GdkPixbuf* src, int width, int height );
+
+        //! returns initialized GdkRectangle
+        inline GdkRectangle gdk_rectangle( int x = 0, int y = 0, int w = -1, int h = -1 )
+        {
+            GdkRectangle out = {x, y, w, h};
+            return out;
+        }
+
+        //! returns true if rectangle is valid
+        inline bool gdk_rectangle_is_valid( const GdkRectangle* rect )
+        { return rect && rect->width > 0 && rect->height > 0; }
+
+        //! performs union of two rectangle, properly accounting for their validity
+        inline void gdk_rectangle_union( const GdkRectangle* first, const GdkRectangle* second, GdkRectangle* out )
+        {
+            if( !out ) return;
+            const bool firstIsValid( Gtk::gdk_rectangle_is_valid( first ) );
+            const bool secondIsValid( Gtk::gdk_rectangle_is_valid( second ) );
+            if( firstIsValid && secondIsValid )  ::gdk_rectangle_union( first, second, out );
+            else if( secondIsValid ) *out = *second;
+            else *out = *first;
+        }
+
+        //! returns true if given rectangle contains point
+        inline bool gdk_rectangle_contains( const GdkRectangle* rect, int x, int y )
+        {
+            return
+                rect &&
+                ( rect->x <= x && (rect->x + rect->width) > x ) &&
+                ( rect->y <= y && (rect->y + rect->height) > y );
+        }
+
+        //@}
 
         //! returns true if widget's layout is reversed
         inline bool gtk_widget_layout_is_reversed( GtkWidget* widget )
@@ -79,6 +187,18 @@ namespace Oxygen
             #endif
 
         }
+
+        //! returns true if widget is a groupbox (a la Qt)
+        inline bool gtk_widget_is_groupbox( GtkWidget* widget )
+        {
+            return
+                GTK_IS_FRAME( widget ) &&
+                gtk_frame_get_label_widget( GTK_FRAME( widget ) ) &&
+                gtk_frame_get_shadow_type( GTK_FRAME( widget ) ) == GTK_SHADOW_OUT;
+        }
+
+        //! returns true if widget (or one of its parent) has a custom background
+        bool gtk_widget_has_custom_background( GtkWidget*, GtkStateType = GTK_STATE_NORMAL );
 
         //! returns true if is an Gnome applet
         bool gtk_widget_is_applet( GtkWidget* );
@@ -110,7 +230,7 @@ namespace Oxygen
         //! trigger area update using GdkRectangle
         inline void gtk_widget_queue_draw( GtkWidget* widget, const GdkRectangle* rect = 0L )
         {
-            if( !rect ) ::gtk_widget_queue_draw( widget );
+            if( !gdk_rectangle_is_valid( rect ) ) ::gtk_widget_queue_draw( widget );
             else ::gtk_widget_queue_draw_area( widget, rect->x, rect->y, rect->width, rect->height );
         }
 
@@ -129,6 +249,9 @@ namespace Oxygen
             const GType tmp( g_type_from_name( typeName.c_str() ) );
             return tmp ? gtk_widget_find_parent( widget, tmp ): 0L;
         }
+
+        //! return parent "group box" if any.
+        GtkWidget* gtk_parent_groupbox( GtkWidget* widget );
 
         //! return parent button if any.
         inline GtkWidget* gtk_parent_button( GtkWidget* widget )
@@ -215,10 +338,10 @@ namespace Oxygen
 
         //! true for 'flat' buttons (e.g. toolbuttons)
         bool gtk_button_is_flat( GtkWidget* );
-        
+
         //! true for treeview headers and affiliated
         bool gtk_button_is_header( GtkWidget* );
-        
+
         //! true for buttons in path bars
         bool gtk_button_is_in_path_bar( GtkWidget* widget );
 
@@ -287,86 +410,11 @@ namespace Oxygen
 
         //@}
 
-        //@!name gdk utilities
-        //@{
-
-        //! returns OxygenRgba color from GdkColor
-        inline ColorUtils::Rgba gdk_get_color( const GdkColor& color )
-        {
-            return ColorUtils::Rgba(
-                double(color.red)/0xffff,
-                double(color.green)/0xffff,
-                double(color.blue)/0xffff );
-        }
-
-        //! map window origin to top level
-        /*!
-        x and y correspond to (0,0) maped to toplevel window;
-        w and h correspond to toplevel window frame size
-        */
-        bool gdk_window_map_to_toplevel( GdkWindow*, gint*, gint*, gint*, gint*, bool frame = false );
-
-        //! map widget origin to top level
-        /*!
-        x and y correspond to (0,0) maped to toplevel window;
-        w and h correspond to toplevel window frame size
-        */
-        bool gtk_widget_map_to_toplevel( GtkWidget*, gint*, gint*, gint*, gint*, bool frame = false );
-
-        //! map window/widget origin to top level
-        inline bool gdk_map_to_toplevel( GdkWindow* window, GtkWidget* widget, gint* x, gint* y, gint* w, gint* h, bool frame = false )
-        {
-            if( window && GDK_IS_WINDOW( window ) ) return gdk_window_map_to_toplevel( window, x, y, w, h, frame );
-            else return gtk_widget_map_to_toplevel( widget, x, y, w, h, frame );
-        }
-
-        //! map window origin to top level
-        inline bool gdk_map_to_toplevel( GdkWindow* window, gint* x, gint* y, gint* w, gint* h, bool frame = false )
-        { return gdk_window_map_to_toplevel( window, x, y, w, h, frame ); }
-
-        //! get top level windows dimension
-        void gdk_toplevel_get_size( GdkWindow*, gint*, gint* );
-
-        //! get top level windows dimension
-        void gdk_toplevel_get_frame_size( GdkWindow*, gint*, gint* );
-
-        //! get position relatve to toplevel
-        void gdk_window_get_toplevel_origin( GdkWindow*, gint*, gint* );
-
-        //! add alpha channel to pixbuf
-        GdkPixbuf* gdk_pixbuf_set_alpha( const GdkPixbuf*, double );
-
-        //! changes the gamma value of an image
-        bool gdk_pixbuf_to_gamma( GdkPixbuf*, double );
-
-        //! resize pixbuf
-        GdkPixbuf* gdk_pixbuf_resize( GdkPixbuf*, int width, int height );
-
-        //! returns initialized GdkRectangle
-        inline GdkRectangle gdk_rectangle( int x = 0, int y = 0, int w = -1, int h = -1 )
-        {
-            GdkRectangle out = {x, y, w, h};
-            return out;
-        }
-
-        //! returns true if rectangle is valid
-        inline bool gdk_rectangle_is_valid( const GdkRectangle* rect )
-        { return rect && rect->width > 0 && rect->height > 0; }
-
-        //! returns true if given rectangle contains point
-        inline bool gdk_rectangle_contains( const GdkRectangle* rect, int x, int y )
-        {
-            return
-                rect &&
-                ( rect->x <= x && (rect->x + rect->width) > x ) &&
-                ( rect->y <= y && (rect->y + rect->height) > y );
-        }
-
-        //@}
+        //! calculates viewport offsets (between view window and bin window
+        void gtk_viewport_get_position( GtkViewport*, gint*, gint* );
 
         //! returns a widget which has response_id as response id for dialog
         GtkWidget* gtk_dialog_find_button( GtkDialog*, gint );
-
     }
 
 }

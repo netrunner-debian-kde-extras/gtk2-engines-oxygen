@@ -38,7 +38,8 @@ namespace Oxygen
 
         //! constructor
         ComboBoxData( void ):
-            _target( 0L )
+            _target( 0L ),
+            _list( 0L )
         {}
 
         //! destructor
@@ -54,6 +55,10 @@ namespace Oxygen
 
         //!@name modifiers
         //@{
+
+        //! list
+        void setList( GtkWidget* widget )
+        { _list = widget; }
 
         //! assign button
         void setButton( GtkWidget* value );
@@ -77,6 +82,10 @@ namespace Oxygen
 
         //!@name accessors
         //@{
+
+        //! list
+        GtkWidget* list( void ) const
+        { return _list; }
 
         //! pressed
         bool pressed( void ) const
@@ -119,7 +128,6 @@ namespace Oxygen
         //!@name callbacks
         //@{
 
-        static void childStyleChangeNotifyEvent( GtkWidget*, GtkStyle*, gpointer );
         static gboolean childDestroyNotifyEvent( GtkWidget*, gpointer );
         static void childToggledEvent( GtkWidget*, gpointer );
         static void childSizeAllocateEvent( GtkWidget*, GtkAllocation*, gpointer );
@@ -127,7 +135,7 @@ namespace Oxygen
         static gboolean enterNotifyEvent( GtkWidget*, GdkEventCrossing*, gpointer );
         static gboolean leaveNotifyEvent( GtkWidget*, GdkEventCrossing*, gpointer );
         static void stateChangeEvent( GtkWidget*, GtkStateType, gpointer );
-
+        static void styleSetEvent( GtkWidget*, GtkStyle*, gpointer );
 
         //@}
 
@@ -136,7 +144,19 @@ namespace Oxygen
         //! target widget
         GtkWidget* _target;
 
+        //! drop-down list, if set
+        GtkWidget* _list;
+
+        //!@name signals
+        //@{
+
+        //! state change signal
         Signal _stateChangeId;
+
+        //! style set
+        Signal _styleSetId;
+
+        //@}
 
         // handle child registration
         class ChildData
@@ -159,11 +179,8 @@ namespace Oxygen
             //! widget
             GtkWidget* _widget;
 
-            //!@name callback ids
-            //@{
+            //!callback id
             Signal _destroyId;
-            Signal _styleChangeId;
-            //@}
 
         };
 
