@@ -1,6 +1,7 @@
 gtk2-engines-oxygen (1.1.0-1) unstable; urgency=low
 
   * New upstream release.
+  * Update debian/control: add libdbus-glib-1-dev build dependency.
 
  -- Fathi Boudra <fabo@debian.org>  Sun, 19 Jun 2011 22:00:43 +0300
 
