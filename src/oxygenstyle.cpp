@@ -87,12 +87,7 @@ namespace Oxygen
         }
 
         // background surface
-        if( !settings().backgroundPixmap().empty() )
-        {
-            setBackgroundSurface( settings().backgroundPixmap() );
-            if( !hasBackgroundSurface() )
-            { std::cerr << "Oxygen::Style::initialize - unable to load background image: " << settings().backgroundPixmap() << std::endl; }
-        }
+        if( !settings().backgroundPixmap().empty() ) setBackgroundSurface( settings().backgroundPixmap() );
 
         // create window shadow
         WindowShadow shadow( settings(), helper() );
@@ -223,7 +218,7 @@ namespace Oxygen
     }
 
     //__________________________________________________________________
-    void Style::renderWindowBackground(
+    bool Style::renderWindowBackground(
         cairo_t* context, GdkWindow* window, GtkWidget* widget,
         GdkRectangle* clipRect, gint x, gint y, gint w, gint h,
         const StyleOptions& options, TileSet::Tiles tiles )
@@ -273,9 +268,13 @@ namespace Oxygen
             } else cairo_save( context );
 
             // get window dimension and position
-            if( !Gtk::gdk_map_to_toplevel( window, widget, &wx, &wy, &ww, &wh, true ) ||
-             Style::instance().settings().applicationName().useFlatBackground( widget ) )
+            // paint flat background when mapping failed
+            if( !Gtk::gdk_map_to_toplevel( window, widget, &wx, &wy, &ww, &wh, true ) )
             {
+
+                #if OXYGEN_DEBUG
+                std::cerr << "Oxygen::Style::renderWindowBackground - map_to_toplevel failed" << std::endl;
+                #endif
 
                 // flat painting for all other apps
                 cairo_set_source(context,base);
@@ -283,7 +282,7 @@ namespace Oxygen
                 cairo_fill(context);
                 if( needToDestroyContext ) cairo_destroy(context);
                 else cairo_restore(context);
-                return;
+                return false;
 
             }
 
@@ -379,12 +378,12 @@ namespace Oxygen
         if(needToDestroyContext) cairo_destroy(context);
         else cairo_restore(context);
 
-        return;
+        return true;
 
     }
 
     //__________________________________________________________________
-    void Style::renderGroupBoxBackground(
+    bool Style::renderGroupBoxBackground(
         cairo_t* context,
         GdkWindow* window, GtkWidget* widget,
         GdkRectangle* clipRect, gint x, gint y, gint w, gint h,
@@ -394,7 +393,7 @@ namespace Oxygen
 
         // find groupbox parent
         GtkWidget* parent( Gtk::gtk_parent_groupbox( widget ) );
-        if( !parent ) return;
+        if( !parent ) return false;
 
         // toplevel window information and relative positioning
         gint ww(0), wh(0);
@@ -402,7 +401,7 @@ namespace Oxygen
 
         // map to parent
         if( !Gtk::gtk_widget_map_to_parent( widget, parent, &wx, &wy, &ww, &wh ) )
-        { return; }
+        { return false; }
 
         // create context and translate
         bool needToDestroyContext( false );
@@ -449,6 +448,8 @@ namespace Oxygen
 
         if(needToDestroyContext) cairo_destroy(context);
         else cairo_restore(context);
+
+        return true;
 
     }
 
@@ -753,11 +754,8 @@ namespace Oxygen
         // do nothing if not enough room
         if( w < 14 || h < 14 )  return;
 
-        /*
-        pass "NoFill" option to renderWindowBackground,
-        to indicate one must make a "hole" in the center
-        */
-        if( options&Flat )
+        // test for flatness
+        if( (options&Flat) || Style::instance().settings().applicationName().useFlatBackground( widget ) )
         {
 
             // create a rounded-rect antimask for renderHoleBackground
@@ -769,21 +767,23 @@ namespace Oxygen
 
         } else if( widget && animations().groupBoxEngine().contains( Gtk::gtk_parent_groupbox( widget ) ) ) {
 
-            // add hole if required (this can be done before translating the context
+            // add hole if required (this can be done before translating the context)
             Cairo::Context context( window, clipRect );
             renderHoleMask( context, x, y, w, h, tiles, sideMargin );
+
+            // normal window background
             renderWindowBackground( context, window, 0L, clipRect, x, y, w, h, options, tiles);
+
+            // groupbox background. Pass NoFill option in order not to render the surrounding frame
             renderGroupBoxBackground( context, window, widget, clipRect, x, y, w, h, options | Blend | NoFill, tiles );
 
         } else {
 
+            // add hole if required (this can be done before translating the context)
             Cairo::Context context( window, clipRect );
             renderHoleMask( context, x, y, w, h, tiles, sideMargin );
 
-            /*
-            normal window background.
-            pass the NoFill option, to ask for a mask
-            */
+            // normal window background.
             renderWindowBackground( context, window,  0L, clipRect, x, y, w, h, options, tiles);
 
         }
@@ -1821,7 +1821,7 @@ namespace Oxygen
 
             // we force ytickness in gtkrc to emulate Qt menubar/menu space separation
             // so adjust vertical extent of the rect in menubar
-            if( settings().applicationName().isMozilla() )
+            if( settings().applicationName().isXul() )
             {
 
                 y+=3;
@@ -2729,7 +2729,7 @@ namespace Oxygen
         // this is quite painfull and slipery code.
         // the same is true with oxygen-qt
         int offset = 2;
-        int adjust = ( tabOptions&Mozilla ) ? 0:2;
+        int adjust = ( tabOptions&Xul ) ? 0:2;
         const TileSet::Tiles tabTiles( Style::tabTiles( side )  );
 
         SlabRect tabSlab;
@@ -2822,30 +2822,25 @@ namespace Oxygen
 
         // fill
         Cairo::Pattern pattern;
-        int dimension = 0;
         switch( side )
         {
             case GTK_POS_BOTTOM:
-            dimension = fillSlab._h;
             fillSlab._h -= 2;
             pattern.set( cairo_pattern_create_linear( 0, fillSlab._y, 0, fillSlab._y + fillSlab._h ) );
             break;
 
             case GTK_POS_TOP:
-            dimension = fillSlab._h;
             fillSlab._y += 2;
             fillSlab._h -= 2;
             pattern.set( cairo_pattern_create_linear( 0, fillSlab._y + fillSlab._h, 0, fillSlab._y ) );
             break;
 
             case GTK_POS_RIGHT:
-            dimension = fillSlab._w;
             fillSlab._w -= 2;
             pattern.set( cairo_pattern_create_linear( fillSlab._x, 0, fillSlab._x + fillSlab._w, 0 ) );
             break;
 
             case GTK_POS_LEFT:
-            dimension = fillSlab._w;
             fillSlab._x += 2;
             fillSlab._w -= 2;
             pattern.set( cairo_pattern_create_linear( fillSlab._x + fillSlab._w, 0, fillSlab._x, 0 ) );
@@ -2862,7 +2857,7 @@ namespace Oxygen
         cairo_pattern_add_color_stop( pattern, 0.9, ColorUtils::Rgba::transparent( light ) );
 
         // in firefox a solid background must be filled
-        if( tabOptions&Mozilla )
+        if( tabOptions&Xul )
         {
             cairo_set_source( context, base );
             cairo_rectangle( context, fillSlab._x, fillSlab._y, fillSlab._w, fillSlab._h );
@@ -2908,7 +2903,7 @@ namespace Oxygen
         // this is quite painfull and slipery code.
         // the same is true with oxygen-qt
         int offset = 2;
-        int adjust = (tabOptions&Mozilla) ? 0:2;
+        int adjust = (tabOptions&Xul) ? 0:2;
         const TileSet::Tiles tabTiles( Style::tabTiles( side )  );
 
         SlabRect tabSlab;
@@ -2995,30 +2990,25 @@ namespace Oxygen
 
         // fill
         Cairo::Pattern pattern;
-        int dimension = 0;
         switch( side )
         {
             case GTK_POS_BOTTOM:
-            dimension = fillSlab._h;
             fillSlab._h -= 3;
             pattern.set( cairo_pattern_create_linear( 0, fillSlab._y, 0, fillSlab._y + fillSlab._h ) );
             break;
 
             case GTK_POS_TOP:
-            dimension = fillSlab._h;
             fillSlab._y += 3;
             fillSlab._h -= 3;
             pattern.set( cairo_pattern_create_linear( 0, fillSlab._y + fillSlab._h, 0, fillSlab._y ) );
             break;
 
             case GTK_POS_RIGHT:
-            dimension = fillSlab._w;
             fillSlab._w -= 3;
             pattern.set( cairo_pattern_create_linear( fillSlab._x, 0, fillSlab._x + fillSlab._w, 0 ) );
             break;
 
             case GTK_POS_LEFT:
-            dimension = fillSlab._w;
             fillSlab._x += 3;
             fillSlab._w -= 3;
             pattern.set( cairo_pattern_create_linear( fillSlab._x + fillSlab._w, 0, fillSlab._x, 0 ) );
@@ -3084,7 +3074,7 @@ namespace Oxygen
         // this is quite painfull and slipery code.
         // the same is true with oxygen-qt
         int offset = 2;
-        int adjust = (tabOptions&Mozilla) ? 0:2;
+        int adjust = (tabOptions&Xul) ? 0:2;
         const TileSet::Tiles tabTiles( Style::tabTiles( side )  );
 
         SlabRect tabSlab;
