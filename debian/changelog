@@ -1,6 +1,8 @@
 gtk2-engines-oxygen (1.1.2-1) UNRELEASED; urgency=low
 
   * New upstream release. (Closes: #640916)
+  * debian/gtk2-engines-oxygen.lintian-overrides: Added with overrides for
+    missing manpages (demo apps don't really need them).
 
  -- Kai Wasserbäch <curan@debian.org>  Thu, 08 Sep 2011 18:02:22 +0200
 
