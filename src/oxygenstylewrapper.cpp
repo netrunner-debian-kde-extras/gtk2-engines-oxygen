@@ -170,8 +170,17 @@ namespace Oxygen
 
             }
 
+            // change gtk dialog button order
+            GtkWidget *toplevel = gtk_widget_get_toplevel( widget );
+            if( GTK_IS_DIALOG( toplevel ) )
+            { Style::instance().animations().dialogEngine().registerWidget( toplevel ); }
+
+            // render background gradient
+            const bool success( Style::instance().renderWindowBackground( window, clipRect, x, y, w, h ) );
+
             // register to window manager
-            if( Gtk::gdk_window_is_base( window ) &&
+            if( success &&
+                Gtk::gdk_window_is_base( window ) &&
                 !( GTK_IS_EVENT_BOX( widget ) &&
                 !gtk_event_box_get_above_child( GTK_EVENT_BOX( widget ) ) ) )
             {
@@ -179,14 +188,6 @@ namespace Oxygen
                 if( Style::instance().hasBackgroundSurface() ) hints |= BackgroundPixmap;
                 Style::instance().animations().backgroundHintEngine().registerWidget( widget, hints );
             }
-
-            // change gtk dialog button order
-            GtkWidget *toplevel = gtk_widget_get_toplevel( widget );
-            if( GTK_IS_DIALOG( toplevel ) )
-            { Style::instance().animations().dialogEngine().registerWidget( toplevel ); }
-
-            // render background gradient
-            Style::instance().renderWindowBackground( window, clipRect, x, y, w, h );
 
             // possible groupbox background
             if( d.isEventBox() && Gtk::gtk_parent_groupbox( widget ) )
@@ -202,18 +203,20 @@ namespace Oxygen
             // do nothing for gnome applets
             if( Gtk::gtk_widget_is_applet( widget ) ) return;
 
-            // for mozilla and openoffice
-            // fill with flat color
-            if( Style::instance().settings().applicationName().useFlatBackground( widget ) )
-            {
-                Style::instance().fill( window, clipRect, x, y, w, h, Palette::Window );
-                return;
-            }
-
             // for modified bg, fill with flat custom color
             if( gtk_widget_get_modifier_style(widget)->color_flags[state]&GTK_RC_BG )
             {
+
                 Style::instance().fill( window, clipRect, x, y, w, h, Gtk::gdk_get_color( style->bg[state] ) );
+
+            } else if(
+                Style::instance().settings().applicationName().useFlatBackground( widget ) ||
+                !Style::instance().animations().backgroundHintEngine().contains( gtk_widget_get_toplevel( widget ) ) )
+            {
+
+                // for mozilla and openoffice fill with flat color
+                Style::instance().fill( window, clipRect, x, y, w, h, Palette::Window );
+                return;
 
             } else {
 
@@ -242,7 +245,7 @@ namespace Oxygen
             // mozilla and openoffice get square non Argb tooltips no matter what
             if(
                 Style::instance().settings().applicationName().isOpenOffice() ||
-                Style::instance().settings().applicationName().isMozilla() )
+                Style::instance().settings().applicationName().isXul() )
             {
                 Style::instance().renderTooltipBackground( window, clipRect, x, y, w, h, StyleOptions() );
                 return;
@@ -250,20 +253,32 @@ namespace Oxygen
 
             StyleOptions options( Round );
             if( Gtk::gtk_widget_has_rgba( widget ) ) options |= Alpha;
-            if( GDK_IS_WINDOW( window ) && !(options&Alpha) )
+
+            if( GDK_IS_WINDOW( window ) )
             {
-
-                // make tooltips appear rounded using XShape extension if screen isn't composited
                 Style::instance().animations().widgetSizeEngine().registerWidget( widget );
-                const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( widget ) );
-                const bool sizeChanged( Style::instance().animations().widgetSizeEngine().updateSize( widget, allocation.width, allocation.height ) );
-                if( sizeChanged && ( gtk_widget_is_toplevel(widget) || GTK_IS_WINDOW(widget) ) )
+                const bool wasAlpha( Style::instance().animations().widgetSizeEngine().wasAlpha( widget ) );
+                if( !(options&Alpha) )
                 {
-                    GdkPixmap* mask( Style::instance().helper().roundMask( allocation.width, allocation.height ) );
-                    gdk_window_shape_combine_mask( window, mask, x, y );
-                    gdk_pixmap_unref( mask );
-                }
+                    // make tooltips appear rounded using XShape extension if screen isn't composited
+                    const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( widget ) );
+                    const bool sizeChanged( Style::instance().animations().widgetSizeEngine().updateSize( widget, allocation.width, allocation.height ) );
+                    if( ( sizeChanged || wasAlpha ) && ( gtk_widget_is_toplevel(widget) || GTK_IS_WINDOW(widget) ) )
+                    {
+                        GdkPixmap* mask( Style::instance().helper().roundMask( allocation.width, allocation.height ) );
+                        gdk_window_shape_combine_mask( window, mask, x, y );
+                        gdk_pixmap_unref( mask );
+                    }
 
+                    Style::instance().animations().widgetSizeEngine().setAlpha(widget, false);
+                }
+                else if( !wasAlpha )
+                {
+                    // reset mask if compositing has appeared
+                    gdk_window_shape_combine_mask( window, NULL, 0, 0 );
+
+                    Style::instance().animations().widgetSizeEngine().setAlpha(widget, true);
+                }
             }
 
             Style::instance().renderTooltipBackground( window, clipRect, x, y, w, h, options );
@@ -442,7 +457,7 @@ namespace Oxygen
             }
             return;
 
-        } else if( d.isEntryBg() && !Style::instance().settings().applicationName().isMozilla( widget ) ) {
+        } else if( d.isEntryBg() && !Style::instance().settings().applicationName().isXul( widget ) ) {
 
             StyleOptions options( widget, state, shadow );
             if(
@@ -845,7 +860,7 @@ namespace Oxygen
             // combobox buttons
             if(
                 ( parent = Gtk::gtk_parent_combobox( widget ) ) &&
-                !Style::instance().settings().applicationName().isMozilla( widget ) &&
+                !Style::instance().settings().applicationName().isXul( widget ) &&
                 Gtk::gtk_combobox_appears_as_list( parent )
                 )
             {
@@ -1094,14 +1109,17 @@ namespace Oxygen
         } else if( d.isToolBar() ) {
 
             // eclipse works ok with animations, though should have flat background
-            const bool isEclipse(Style::instance().settings().applicationName().isEclipse());
-
-            if( ( Style::instance().settings().applicationName().useFlatBackground( widget ) ||
-                Gtk::gtk_widget_is_applet( widget ) ) && !isEclipse )
-                { return; }
-
-            if(!isEclipse)
+            if( Style::instance().settings().applicationName().isEclipse() )
             {
+
+                draw_animated_button( window, clipRect, widget );
+                return;
+
+            } else if( Style::instance().settings().applicationName().useFlatBackground( widget ) || Gtk::gtk_widget_is_applet( widget )  ) {
+
+                return;
+
+            } else {
 
                 Style::instance().renderWindowBackground( window, clipRect, x, y, w, h );
 
@@ -1109,11 +1127,11 @@ namespace Oxygen
                 if( Gtk::gtk_parent_groupbox( widget ) )
                 { Style::instance().renderGroupBoxBackground( window, widget, clipRect, x, y, w, h, Blend ); }
 
-            }
+                // also draw possible animated tool button
+                draw_animated_button( window, clipRect, widget );
+                return;
 
-            // also draw possible animated tool button
-            draw_animated_button( window, clipRect, widget );
-            return;
+            }
 
         } else if( d.isMenu() ) {
 
@@ -1122,7 +1140,7 @@ namespace Oxygen
 
                 if(
                     Gtk::gdk_window_is_base( window ) &&
-                    !Style::instance().settings().applicationName().isMozilla( widget ) )
+                    !Style::instance().settings().applicationName().isXul( widget ) )
                 {
                     BackgroundHints hints( BackgroundGradient );
                     if( Style::instance().hasBackgroundSurface() ) hints |= BackgroundPixmap;
@@ -1136,7 +1154,7 @@ namespace Oxygen
                 StyleOptions options( Menu );
 
                 // set alpha flag. Special handling is needed for mozilla and openoffice.
-                if( Style::instance().settings().applicationName().isMozilla( widget ) ||
+                if( Style::instance().settings().applicationName().isXul( widget ) ||
                     Style::instance().settings().applicationName().isOpenOffice() )
                 {
 
@@ -1155,24 +1173,29 @@ namespace Oxygen
                 // add mask if needed
                 if( GTK_IS_MENU(widget) )
                 {
+                    Style::instance().animations().widgetSizeEngine().registerWidget( widget );
+                    const bool wasAlpha(Style::instance().animations().widgetSizeEngine().wasAlpha(widget));
                     if( !(options&Alpha) )
                     {
 
                         // make menus appear rounded using XShape extension if screen isn't composited
-                        Style::instance().animations().widgetSizeEngine().registerWidget( widget );
                         const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( widget ) );
-                        if( Style::instance().animations().widgetSizeEngine().updateSize( widget, allocation.width, allocation.height ) )
+                        const bool sizeChanged(Style::instance().animations().widgetSizeEngine().updateSize( widget, allocation.width, allocation.height ));
+                        if( sizeChanged || wasAlpha )
                         {
                             GdkPixmap* mask( Style::instance().helper().roundMask( w, h - 2*Oxygen::Menu_VerticalOffset ) );
                             gdk_window_shape_combine_mask( gtk_widget_get_parent_window(widget), mask, 0, Oxygen::Menu_VerticalOffset );
                             gdk_pixmap_unref(mask);
                         }
 
-                    } else {
+                        Style::instance().animations().widgetSizeEngine().setAlpha(widget, false);
 
+                    } else if( !wasAlpha )
+                    {
                         // reset mask if compositing has appeared after we had set a mask
                         gdk_window_shape_combine_mask( gtk_widget_get_parent_window(widget), NULL, 0, 0);
 
+                        Style::instance().animations().widgetSizeEngine().setAlpha(widget, true);
                     }
                 }
 
@@ -1294,7 +1317,7 @@ namespace Oxygen
             if( GTK_IS_PROGRESS_BAR( widget ) )
             {
 
-                if( !Style::instance().settings().applicationName().isMozilla( widget ) &&
+                if( !Style::instance().settings().applicationName().isXul( widget ) &&
                     !Style::instance().settings().applicationName().isOpenOffice() )
                 {
                     /*
@@ -1377,7 +1400,7 @@ namespace Oxygen
 
                 options |= NoFill;
                 ColorUtils::Rgba background( Gtk::gdk_get_color( style->base[gtk_widget_get_state(widget)] ) );
-                if( Style::instance().settings().applicationName().isMozilla( widget ) )
+                if( Style::instance().settings().applicationName().isXul( widget ) )
                 {
 
                     /*
@@ -1411,7 +1434,7 @@ namespace Oxygen
                 tiles &= ~TileSet::Right;
 
                 if( !Style::instance().settings().applicationName().isOpenOffice() &&
-                    !Style::instance().settings().applicationName().isMozilla( widget ) )
+                    !Style::instance().settings().applicationName().isXul( widget ) )
                 { Style::instance().renderHoleBackground( window, widget, clipRect, x-1, y-1, w+6, h+2, tiles, sideMargin ); }
 
                 // shrink spinbox entry hole by 3px on right side
@@ -1424,7 +1447,7 @@ namespace Oxygen
                 tiles &= ~TileSet::Left;
 
                 if( !Style::instance().settings().applicationName().isOpenOffice() &&
-                    !Style::instance().settings().applicationName().isMozilla( widget ) )
+                    !Style::instance().settings().applicationName().isXul( widget ) )
                 { Style::instance().renderHoleBackground( window, widget, clipRect, x-5, y-1, w+6, h+2, tiles, sideMargin ); }
 
                 // shrink spinbox entry hole by 3px on right side
@@ -1582,8 +1605,9 @@ namespace Oxygen
             // always register to widget size engine
             Style::instance().animations().widgetSizeEngine().registerWidget( parent );
             const bool sizeChanged( Style::instance().animations().widgetSizeEngine().updateSize( parent, allocation.width, allocation.height ) );
+            const bool wasAlpha(Style::instance().animations().widgetSizeEngine().wasAlpha(parent));
 
-            if( sizeChanged )
+            if( sizeChanged || (!(options&Alpha) && wasAlpha) || (!wasAlpha && (options&Alpha)) )
             {
 
                 // update window shape
@@ -1594,6 +1618,15 @@ namespace Oxygen
                     GdkPixmap* mask( Style::instance().helper().roundMask( allocation.width, allocation.height ) );
                     gdk_window_shape_combine_mask( gtk_widget_get_window( parent ), mask, 0, 0 );
                     gdk_pixmap_unref( mask );
+
+                    Style::instance().animations().widgetSizeEngine().setAlpha(parent, false);
+                }
+                else if( !wasAlpha )
+                {
+                    // reset XShape mask on transition from non-composited to composited
+                    gdk_window_shape_combine_mask( gtk_widget_get_window( parent ), NULL, 0, 0 );
+
+                    Style::instance().animations().widgetSizeEngine().setAlpha(parent, true);
                 }
 
                 // also sets inner list mask
@@ -1626,7 +1659,7 @@ namespace Oxygen
 
         } else if( d.isBase() && GTK_IS_MENU( widget ) ) {
 
-                // this is to prevent crappy mozilla to
+                // this is to prevent mozilla to
                 // draw yet another frame around menus
                 return;
 
@@ -1720,7 +1753,7 @@ namespace Oxygen
                 if( Style::instance().animations().hoverEngine().hovered( widget ) )
                 { options |= Hover; }
 
-                if( !Style::instance().settings().applicationName().isMozilla( widget ) )
+                if( !Style::instance().settings().applicationName().isXul( widget ) )
                 {
 
                     // fill the inside of the spinbox manually
@@ -1834,7 +1867,7 @@ namespace Oxygen
                     w+=2; h+=2;
 
                     const int sideMargin( std::max( 0, style->xthickness - 2 ) );
-                    if( !Style::instance().settings().applicationName().isMozilla( widget ) )
+                    if( !Style::instance().settings().applicationName().isXul( widget ) )
                     { Style::instance().renderHoleBackground( window, widget, clipRect, x, y, w, h, TileSet::Full, sideMargin ); }
 
                     // shrink entry by 3px at each side
@@ -1902,7 +1935,7 @@ namespace Oxygen
         } else if(
             (parent = Gtk::gtk_parent_combobox( widget )) &&
             !GTK_IS_CELL_VIEW( widget ) &&
-            !Style::instance().settings().applicationName().isMozilla( widget ) ) {
+            !Style::instance().settings().applicationName().isXul( widget ) ) {
 
             Style::instance().animations().comboBoxEngine().registerWidget( parent );
             Style::instance().animations().comboBoxEngine().registerChild( parent, widget );
@@ -2367,7 +2400,7 @@ namespace Oxygen
 
         // by default all arrows are animated
         QtSettings::ArrowSize arrowSize( QtSettings::ArrowNormal );
-        if( d.isMenuItem() && Style::instance().settings().applicationName().isMozilla( widget ) )
+        if( d.isMenuItem() && Style::instance().settings().applicationName().isXul( widget ) )
         { arrowSize = QtSettings::ArrowTiny; }
 
         // define default color role
@@ -2791,7 +2824,7 @@ namespace Oxygen
             options |= NoFill;
             options &= ~(Hover|Focus);
 
-            if( Style::instance().settings().applicationName().isMozilla( widget ) )
+            if( Style::instance().settings().applicationName().isXul( widget ) )
             {
 
                 Gtk::Gap gap( gap_x, gap_w, position );
@@ -2979,14 +3012,14 @@ namespace Oxygen
             see if tab is hovered. This is only done if widget is notebook, and if not running a mozilla
             (or open office) app, because the latter do not pass the actual tab rect as argument
             */
-            const bool isMozilla( Style::instance().settings().applicationName().isMozilla( widget ) );
+            const bool isXul( Style::instance().settings().applicationName().isXul( widget ) );
             const bool isOpenOffice( Style::instance().settings().applicationName().isOpenOffice() );
 
             // if passed window is invalid, do not hover
             const bool disableHover( !GDK_IS_WINDOW( window ) );
 
             AnimationData data;
-            if( GTK_IS_NOTEBOOK( widget ) && !( isMozilla || isOpenOffice || disableHover ) )
+            if( GTK_IS_NOTEBOOK( widget ) && !( isXul || isOpenOffice || disableHover ) )
             {
 
                 // make sure widget is registered
@@ -3039,7 +3072,7 @@ namespace Oxygen
             }
 
             // render
-            if( isMozilla ) tabOptions |= Mozilla;
+            if( isXul ) tabOptions |= Xul;
 
             Style::instance().renderTab( window, clipRect, x, y, w, h, position, options, tabOptions, data );
 
@@ -3427,7 +3460,7 @@ namespace Oxygen
         // initialize argb hooks
         if(
             Style::instance().settings().argbEnabled() &&
-            !Style::instance().settings().applicationName().isMozilla() )
+            !Style::instance().settings().applicationName().isXul() )
         { Style::instance().argbHelper().initializeHooks(); }
 
     }
