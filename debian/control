@@ -3,7 +3,10 @@ Section: gnome
 Priority: optional
 Maintainer: Debian KDE Extras Team <pkg-kde-extras@lists.alioth.debian.org>
 Uploaders: Fathi Boudra <fabo@debian.org>, Kai Wasserbäch <curan@debian.org>
-Build-Depends: cmake, debhelper (>= 8), libdbus-glib-1-dev, libgtk2.0-dev
+Build-Depends: cmake,
+ debhelper (>= 8.1.3~),
+ libdbus-glib-1-dev,
+ libgtk2.0-dev (>= 2.24.5-4)
 Standards-Version: 3.9.2
 Homepage: https://projects.kde.org/projects/playground/artwork/oxygen-gtk
 Vcs-Git: git://anonscm.debian.org/pkg-kde/kde-extras/gtk2-engines-oxygen.git
@@ -11,8 +14,10 @@ Vcs-Browser: http://anonscm.debian.org/gitweb/?p=pkg-kde/kde-extras/gtk2-engines
 
 Package: gtk2-engines-oxygen
 Architecture: any
+Pre-Depends: multiarch-support
 Depends: ${misc:Depends}, ${shlibs:Depends}
 Suggests: kde-config-gtk-style
+Multi-Arch: same
 Description: Oxygen widget theme for GTK+-based applications
  Oxygen-Gtk is a port of the Oxygen widget style to GTK+.
  .
