@@ -1,1 +1,2 @@
 dont-build-demos.patch
+use-sane-prefix-to-install-engine.patch
