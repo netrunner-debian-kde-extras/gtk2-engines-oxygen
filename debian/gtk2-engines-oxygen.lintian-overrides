@@ -1,3 +1,0 @@
-# No real need for a man page (only demo apps)
-gtk2-engines-oxygen: binary-without-manpage usr/bin/oxygen-gtk-deco
-gtk2-engines-oxygen: binary-without-manpage usr/bin/oxygen-gtk-demo

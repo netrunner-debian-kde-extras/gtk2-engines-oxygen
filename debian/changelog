@@ -7,6 +7,10 @@ gtk2-engines-oxygen (1.1.2-2) UNRELEASED; urgency=low
       · Bumped B-D on debhelper.
       · Bumped B-D on libgtk2.0-dev (multiarch ready since 2.24.5-4).
       · Added Pre-Depends and Multi-Arch entries to binary package.
+  * Don't build the two demo applications:
+    - debian/rules: Set DEBIAN_NO_DEMOS.
+    - debian/patches/dont-build-demos.patch: Added to make demo building
+      optional.
 
  -- Kai Wasserbäch <curan@debian.org>  Thu, 08 Sep 2011 22:25:50 +0200
 
