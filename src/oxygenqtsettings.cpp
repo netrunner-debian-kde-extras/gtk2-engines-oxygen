@@ -84,6 +84,7 @@ namespace Oxygen
         _toolBarAnimationsDuration( 50 ),
         _buttonSize( ButtonDefault ),
         _frameBorder( BorderDefault ),
+        _windecoBlendType( FollowStyleHint ),
         _activeShadowConfiguration( Palette::Active ),
         _inactiveShadowConfiguration( Palette::Inactive ),
         _argbEnabled( true ),
@@ -436,12 +437,42 @@ namespace Oxygen
     void QtSettings::loadKdeIcons( void )
     {
 
+        // update icon search path
+        // put existing default path in a set
+        PathSet searchPath;
+        gchar** gtkSearchPath;
+        int nElements;
+        gtk_icon_theme_get_search_path( gtk_icon_theme_get_default(), &gtkSearchPath, &nElements );
+        for( int i=0; i<nElements; i++ ) { searchPath.insert( gtkSearchPath[i] ); }
+        g_free( gtkSearchPath );
+
+        // add kde's path. Loop is reversed because added path must be prepended.
+        for( PathList::const_reverse_iterator iter = _kdeIconPathList.rbegin(); iter != _kdeIconPathList.rend(); ++iter )
+        {
+
+            // remove trailing backslash, if any
+            std::string path( *iter );
+            if( path.empty() ) continue;
+            if( path[path.size()-1] == '/' ) path = path.substr( 0, path.size()-1 );
+
+            // check if already present and prepend if not
+            if( searchPath.find( path ) == searchPath.end() )
+            { gtk_icon_theme_prepend_search_path(gtk_icon_theme_get_default(), path.c_str() ); }
+        }
+
+        #if OXYGEN_DEBUG
+        gtk_icon_theme_get_search_path( gtk_icon_theme_get_default(), &gtkSearchPath, &nElements );
+        for( int i=0; i<nElements; i++ )
+        { std::cerr << "Oxygen::QtSettings::loadKdeIcons - icon theme search path: " <<  gtkSearchPath[i] << std::endl; }
+        #endif
+
         // load icon theme and path to gtk
         _iconThemes.clear();
         _kdeIconTheme = _kdeGlobals.getOption( "[Icons]", "Theme" ).toVariant<std::string>("oxygen");
 
         // store to settings
         GtkSettings* settings( gtk_settings_get_default() );
+
         gtk_settings_set_string_property( settings, "gtk-icon-theme-name", _kdeIconTheme.c_str(), "oxygen-gtk" );
         gtk_settings_set_string_property( settings, "gtk-fallback-icon-theme-name", _kdeFallbackIconTheme.c_str(), "oxygen-gtk" );
 
@@ -905,6 +936,13 @@ namespace Oxygen
         else if( titleAlign == "Center" ) _titleAlignment = PANGO_ALIGN_CENTER;
         else if( titleAlign == "Right" ) _titleAlignment = PANGO_ALIGN_RIGHT;
         else _titleAlignment = PANGO_ALIGN_CENTER;
+
+        // Windeco radial gradient enable option
+        std::string wdBlendType( oxygen.getValue( "[Windeco]", "BlendColor", "Follow Style Hint" ) );
+        if( wdBlendType == "Follow Style Hint" ) _windecoBlendType=FollowStyleHint;
+        else if( wdBlendType == "Radial Gradient" ) _windecoBlendType=RadialGradient;
+        else if( wdBlendType == "Solid Color" ) _windecoBlendType=SolidColor;
+        else _windecoBlendType=FollowStyleHint;
 
         // shadow configurations
         _activeShadowConfiguration.initialize( oxygen );
