@@ -1,4 +1,4 @@
-gtk2-engines-oxygen (1.1.4-1) UNRELEASED; urgency=low
+gtk2-engines-oxygen (1.1.4-1) unstable; urgency=low
 
   * New upstream release.
   * debian/patches/dont-build-demos.patch: Refreshed.
@@ -8,7 +8,7 @@ gtk2-engines-oxygen (1.1.4-1) UNRELEASED; urgency=low
       for multiarch.
     - debian/source.lintian-overrides: Added (temp. only).
 
- -- Kai Wasserbäch <curan@debian.org>  Tue, 18 Oct 2011 20:58:40 +0200
+ -- Kai Wasserbäch <curan@debian.org>  Tue, 18 Oct 2011 21:09:25 +0200
 
 gtk2-engines-oxygen (1.1.3-1) unstable; urgency=low
 
