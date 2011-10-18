@@ -8,7 +8,7 @@ Forwarded: not-needed
 
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -152,4 +152,6 @@ configure_file( config.h.cmake ${CMAKE_B
+@@ -199,4 +199,6 @@ configure_file( config.h.cmake ${CMAKE_B
  add_subdirectory( src )
  add_subdirectory( rc )
  add_subdirectory( special-icons )
