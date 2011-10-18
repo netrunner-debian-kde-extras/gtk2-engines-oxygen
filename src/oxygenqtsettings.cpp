@@ -468,7 +468,7 @@ namespace Oxygen
 
         // load icon theme and path to gtk
         _iconThemes.clear();
-        _kdeIconTheme = _kdeGlobals.getOption( "[Icons]", "Theme" ).toVariant<std::string>("oxygen");
+        _kdeIconTheme = _kdeGlobals.getValue( "[Icons]", "Theme", "oxygen" );
 
         // store to settings
         GtkSettings* settings( gtk_settings_get_default() );
@@ -958,7 +958,7 @@ namespace Oxygen
         _rc.setCurrentSection( Gtk::RC::defaultSection() );
         _rc.addToCurrentSection( Gtk::RCOption<int>(
             "  GtkScrollbar::slider-width",
-            oxygen.getOption( "[Style]", "ScrollBarWidth" ).toVariant<int>(15) - 1 ) );
+            oxygen.getOption( "[Style]", "ScrollBarWidth" ).toVariant<int>(15) + 1 ) );
 
         _rc.addToCurrentSection( Gtk::RCOption<bool>("  GtkScrollbar::has-backward-stepper", _scrollBarSubLineButtons > 0 ) );
         _rc.addToCurrentSection( Gtk::RCOption<bool>("  GtkScrollbar::has-forward-stepper", _scrollBarAddLineButtons > 0 ) );

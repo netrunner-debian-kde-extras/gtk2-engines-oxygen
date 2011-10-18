@@ -24,6 +24,7 @@
 */
 
 #include <gtk/gtk.h>
+#include "oxygenxulinfo.h"
 
 // oxygen style struct
 struct OxygenStyle
@@ -50,6 +51,14 @@ namespace Oxygen
         inline static GtkStyleClass* parentClass( void )
         { return _parentClass; }
 
+        //! parent class
+        inline static GQuark quarkRCStyle( void )
+        { return _quarkRCStyle; }
+
+        //! xul info
+        inline static XulInfo& xulInfo( void )
+        { return _xulInfo; }
+
         protected:
 
         //! instance initialization
@@ -68,6 +77,16 @@ namespace Oxygen
 
         //! registered type
         static GType _type;
+
+        //! RC style quark
+        /*!
+        used to check whether an RCStyle was installed on a given widget or not.
+        See gtkwidet::gtk_widget_get_modifier_style()
+        */
+        static GQuark _quarkRCStyle;
+
+        //! xul info, needed to properly render focus in checkboxes and radio buttons
+        static XulInfo _xulInfo;
 
     };
 }
