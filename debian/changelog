@@ -2,6 +2,11 @@ gtk2-engines-oxygen (1.1.4-1) UNRELEASED; urgency=low
 
   * New upstream release.
   * debian/patches/dont-build-demos.patch: Refreshed.
+  * Move to debhelper compat level 9:
+    - debian/rules: Remove dpkg-architecture invocation, dh v9 does it for us.
+    - debian/control: Bump the B-D on debhelper and correct the B-D on cmake
+      for multiarch.
+    - debian/source.lintian-overrides: Added (temp. only).
 
  -- Kai Wasserbäch <curan@debian.org>  Tue, 18 Oct 2011 20:58:40 +0200
 
