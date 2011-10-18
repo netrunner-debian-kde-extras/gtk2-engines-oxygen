@@ -13,7 +13,7 @@ set( CPACK_PACKAGE_DESCRIPTION_SUMMARY "Oxygen Gtk theme" )
 set( CPACK_PACKAGE_VENDOR "hugo@oxygen-icons.org" )
 set( CPACK_PACKAGE_VERSION_MAJOR "1" )
 set( CPACK_PACKAGE_VERSION_MINOR "1" )
-set( CPACK_PACKAGE_VERSION_PATCH "3" )
+set( CPACK_PACKAGE_VERSION_PATCH "4" )
 set( CPACK_SOURCE_IGNORE_FILES "build" "^${PROJECT_SOURCE_DIR}.*/.git/" )
 
 ##################################
@@ -169,6 +169,18 @@ message( "Paths: " )
 message( "  Installing the GTK theme engine library to: ${INSTALL_PATH_GTK_ENGINES}" )
 message( "  Installing the GTK theme engine data to: ${GTK_THEME_DIR}" )
 message( "" )
+
+##################
+# uninstall target
+##################
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake_uninstall.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
+    IMMEDIATE @ONLY)
+
+add_custom_target(uninstall
+    COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
+
 
 ######################################################################
 # Setup definitions and directories to be used for linking and include

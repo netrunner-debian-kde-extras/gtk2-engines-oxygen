@@ -50,6 +50,8 @@ namespace Oxygen
     GtkStyleClass* StyleWrapper::_parentClass = 0L;
     GTypeInfo StyleWrapper::_typeInfo;
     GType StyleWrapper::_type = 0L;
+    GQuark StyleWrapper::_quarkRCStyle = 0L;
+    XulInfo StyleWrapper::_xulInfo = XulInfo();
 
     //___________________________________________________________________________________________________________
     static void draw_animated_button(
@@ -152,7 +154,8 @@ namespace Oxygen
             - register the widgets to the relevant engines as below
             - pass the modified color to renderWindowBackground
             */
-            if( gtk_widget_get_modifier_style(widget)->color_flags[state]&GTK_RC_BG )
+            const bool hasRCStyle( g_object_get_qdata (G_OBJECT (widget), StyleWrapper::quarkRCStyle() ) );
+            if( hasRCStyle && gtk_widget_get_modifier_style(widget)->color_flags[state]&GTK_RC_BG )
             {
                 Style::instance().fill( window, clipRect, x, y, w, h, Gtk::gdk_get_color( style->bg[state] ) );
                 return;
@@ -204,7 +207,8 @@ namespace Oxygen
             if( Gtk::gtk_widget_is_applet( widget ) ) return;
 
             // for modified bg, fill with flat custom color
-            if( gtk_widget_get_modifier_style(widget)->color_flags[state]&GTK_RC_BG )
+            const bool hasRCStyle( g_object_get_qdata (G_OBJECT (widget), StyleWrapper::quarkRCStyle() ) );
+            if( hasRCStyle && gtk_widget_get_modifier_style(widget)->color_flags[state]&GTK_RC_BG )
             {
 
                 Style::instance().fill( window, clipRect, x, y, w, h, Gtk::gdk_get_color( style->bg[state] ) );
@@ -304,7 +308,9 @@ namespace Oxygen
             // render "normal" background
             bool drawTreeLines( true );
             ColorUtils::Rgba background;
-            if( gtk_widget_get_modifier_style(widget)->color_flags[GTK_STATE_NORMAL]&GTK_RC_BASE )
+
+            const bool hasRCStyle( g_object_get_qdata (G_OBJECT (widget), StyleWrapper::quarkRCStyle() ) );
+            if( hasRCStyle && gtk_widget_get_modifier_style(widget)->color_flags[GTK_STATE_NORMAL]&GTK_RC_BASE )
             {
 
                 /*
@@ -315,6 +321,10 @@ namespace Oxygen
 
                 // assign background
                 background = Gtk::gdk_get_color( style->base[GTK_STATE_NORMAL] );
+
+            } else if( widget && std::string( G_OBJECT_TYPE_NAME( widget ) ).find( "MiroTreeView" ) != std::string::npos ) {
+
+                drawTreeLines = false;
 
             } else if( d.isCellEven() || Gtk::gtk_combobox_is_tree_view( widget ) ) {
 
@@ -2073,6 +2083,9 @@ namespace Oxygen
 
             StyleOptions options( widget, state, shadow );
 
+            // this ensures that hover keeps precedence of focus for pressed down buttons
+            if( state == GTK_STATE_ACTIVE ) options |= Hover;
+
             // test whether blending should be enabled
             if( !(
                 d.isCellCheck() ||
@@ -2111,6 +2124,12 @@ namespace Oxygen
                 // retrieve animation state
                 data = Style::instance().animations().widgetStateEngine().get( widget, options );
 
+            }
+
+            if( Style::instance().settings().applicationName().isXul( widget ) )
+            {
+                StyleWrapper::xulInfo().setType( XulInfo::CheckBox );
+                StyleWrapper::xulInfo().setRect( Gtk::gdk_rectangle( x, y, w, h ) );
             }
 
             Style::instance().renderCheckBox( window, clipRect, x, y, w, h, shadow, options, data );
@@ -2162,11 +2181,23 @@ namespace Oxygen
         {
 
             StyleOptions options( widget, state, shadow );
+
+            // this ensures that hover keeps precedence of focus for pressed down buttons
+            if( state == GTK_STATE_ACTIVE ) options |= Hover;
+
             if( !(
                 Gtk::gtk_parent_tree_view( widget ) ||
                 Gtk::gtk_widget_has_custom_background( widget ) ||
                 Style::instance().settings().applicationName().useFlatBackground(widget) ) )
             { options |= Blend; }
+
+
+
+            if( Style::instance().settings().applicationName().isXul( widget ) )
+            {
+                StyleWrapper::xulInfo().setType( XulInfo::RadioButton );
+                StyleWrapper::xulInfo().setRect( Gtk::gdk_rectangle( x, y, w, h ) );
+            }
 
             // retrieve animation state and render accordingly
             const AnimationData data( Style::instance().animations().widgetStateEngine().get( widget, options ) );
@@ -3147,15 +3178,60 @@ namespace Oxygen
         #endif
 
         Gtk::Detail d( detail );
+
+        // special handling of Xul checkboxes and radio buttons
+        if( Style::instance().settings().applicationName().isXul() && (d.isCheckButton() || d.isRadioButton() ) && !gtk_widget_has_focus( widget ) )
+        {
+
+            // try set correct rectangle based on last call to either draw_check or draw_option
+            bool forceRadioButton( false );
+            if( StyleWrapper::xulInfo().isValid() )
+            {
+
+                forceRadioButton = StyleWrapper::xulInfo().type() == XulInfo::RadioButton;
+
+                x = StyleWrapper::xulInfo().rect().x;
+                y = StyleWrapper::xulInfo().rect().y;
+                w = StyleWrapper::xulInfo().rect().width;
+                h = StyleWrapper::xulInfo().rect().height;
+                clipRect = 0L;
+
+                // clear Xul info
+                StyleWrapper::xulInfo().clear();
+
+            } else {
+
+                return;
+
+            }
+
+            // Render focus here, since XUL apps don't let us figure out focused state in draw_box() etc.
+            if( ( d.isRadioButton() && GTK_IS_RADIO_BUTTON(widget) ) || ( d.isCheckButton() && GTK_IS_CHECK_BUTTON(widget) && forceRadioButton ) )
+            {
+
+                Style::instance().renderRadioButton(window,clipRect, x, y, w, h, GTK_SHADOW_NONE,Focus|NoFill,AnimationData());
+                return;
+
+            } else if( d.isCheckButton() && GTK_IS_CHECK_BUTTON(widget) ) {
+
+                Style::instance().renderSlab(window,clipRect, x-1, y-1 ,w+3, h+3, Focus|NoFill,AnimationData());
+                return;
+
+            }
+
+        }
+
         if( d.isNull() && GTK_IS_WINDOW( widget ) )
         {
 
             // TODO: implement something better
-            StyleWrapper::parentClass()->draw_focus( style, window, state,
+            return StyleWrapper::parentClass()->draw_focus( style, window, state,
                 clipRect, widget, detail,
                 x, y, w, h );
 
         }
+
+        return;
 
     }
 
@@ -3526,6 +3602,13 @@ namespace Oxygen
 
         _typeInfo = info;
         _type = g_type_module_register_type( module, GTK_TYPE_STYLE, "OxygenStyle", &_typeInfo, GTypeFlags(0 ) );
+
+        /*
+        copied for gtk/gtkwidget.C in gtk_widget_class_init()
+        it is used to check whether an RCStyle was installed on a given widget or not.
+        See gtkwidet::gtk_widget_get_modifier_style()
+        */
+        _quarkRCStyle = g_quark_try_string( "gtk-rc-style" );
 
     }
 
