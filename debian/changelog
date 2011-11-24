@@ -1,3 +1,9 @@
+gtk2-engines-oxygen (1.1.5-1) unstable; urgency=low
+
+  * New upstream release.
+
+ -- Kai Wasserbäch <curan@debian.org>  Thu, 24 Nov 2011 10:37:07 +0100
+
 gtk2-engines-oxygen (1.1.4-1) unstable; urgency=low
 
   * New upstream release.
