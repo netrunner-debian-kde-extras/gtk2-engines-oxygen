@@ -1,0 +1,15 @@
+[Buildset]
+BuildItems=@Variant(\x00\x00\x00\t\x00\x00\x00\x00\x01\x00\x00\x00\x0b\x00\x00\x00\x00\x01\x00\x00\x00\x14\x00o\x00x\x00y\x00g\x00e\x00n\x00-\x00g\x00t\x00k)
+
+[CMake]
+BuildDirs=/media/hd_linux/hpereira/gtk/build/oxygen-gtk
+CMakeDir=/usr/share/cmake/Modules
+Current CMake Binary=file:///usr/bin/cmake
+CurrentBuildDir=file:///media/hd_linux/hpereira/gtk/build/oxygen-gtk
+CurrentBuildType=Debug
+CurrentInstallDir=
+Extra Arguments=
+ProjectRootRelative=./
+
+[Project]
+VersionControlSupport=kdevgit
