@@ -13,8 +13,22 @@ set( CPACK_PACKAGE_DESCRIPTION_SUMMARY "Oxygen Gtk theme" )
 set( CPACK_PACKAGE_VENDOR "hugo@oxygen-icons.org" )
 set( CPACK_PACKAGE_VERSION_MAJOR "1" )
 set( CPACK_PACKAGE_VERSION_MINOR "1" )
-set( CPACK_PACKAGE_VERSION_PATCH "0" )
+set( CPACK_PACKAGE_VERSION_PATCH "6" )
 set( CPACK_SOURCE_IGNORE_FILES "build" "^${PROJECT_SOURCE_DIR}.*/.git/" )
+
+##################################
+# Define oxygen-gtk version string
+##################################
+if( EXISTS "${CMAKE_SOURCE_DIR}/.git" )
+    execute_process(COMMAND sh -c "cd ${CMAKE_SOURCE_DIR} && git describe 2>/dev/null"
+        OUTPUT_VARIABLE OXYGEN_VERSION
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+endif( EXISTS "${CMAKE_SOURCE_DIR}/.git" )
+STRING(COMPARE NOTEQUAL "${OXYGEN_VERSION}" "" OXYGEN_VERSION_DETECTED )
+if( NOT OXYGEN_VERSION_DETECTED )
+    set( OXYGEN_VERSION ${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH} )
+endif( NOT OXYGEN_VERSION_DETECTED )
+message( "Detected oxygen version string: ${OXYGEN_VERSION}" )
 
 set( CPACK_SOURCE_PACKAGE_FILE_NAME "oxygen-gtk-${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}" )
 include( CPack )
@@ -26,6 +40,11 @@ include( CPack )
 if( NOT DEFINED OXYGEN_DEBUG )
     set( OXYGEN_DEBUG 0 )
 endif( NOT DEFINED OXYGEN_DEBUG )
+
+# Set to 1 to enable debug logs regarding inner shadows
+if( NOT DEFINED OXYGEN_DEBUG_INNERSHADOWS )
+    set( OXYGEN_DEBUG_INNERSHADOWS 0 )
+endif( NOT DEFINED OXYGEN_DEBUG_INNERSHADOWS )
 
 # Set to 1 to replace gtk stock icons
 # with oxygen-icons
@@ -50,6 +69,11 @@ if( NOT DEFINED ENABLE_INNER_SHADOWS_HACK )
     set( ENABLE_INNER_SHADOWS_HACK 1 )
 endif( NOT DEFINED ENABLE_INNER_SHADOWS_HACK )
 
+# set to 0 to disable groupbox hack
+if( NOT DEFINED ENABLE_GROUPBOX_HACK )
+    set( ENABLE_GROUPBOX_HACK 1 )
+endif( NOT DEFINED ENABLE_GROUPBOX_HACK )
+
 ##############
 # Requirements
 ##############
@@ -63,10 +87,10 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
         ARGS --variable=prefix gtk+-2.0
         OUTPUT_VARIABLE GTK_PREFIX )
 
+  	message( "Info: using PKGCONFIG_EXECUTABLE to set the installation prefix" )
     set(CMAKE_INSTALL_PREFIX
         ${GTK_PREFIX} CACHE PATH "GTK install prefix" FORCE
         )
-
 endif()
 
 # X11
@@ -92,48 +116,77 @@ endif()
 # installation directories
 ##########################
 exec_program(
-	${PKGCONFIG_EXECUTABLE}
-	ARGS --variable=gtk_binary_version gtk+-2.0
-	OUTPUT_VARIABLE GTK_BIN_VERSION )
+    ${PKGCONFIG_EXECUTABLE}
+    ARGS --variable=gtk_binary_version gtk+-2.0
+    OUTPUT_VARIABLE GTK_BIN_VERSION )
 
-set( INSTALL_PATH_GTK_ENGINES "${CMAKE_INSTALL_PREFIX}/lib${LIB_SUFFIX}/gtk-2.0/${GTK_BIN_VERSION}/engines" CACHE PATH "The directory in which to install the theme engine library( eg. /usr/lib/gtk-2.0/2.4.0/engines )" )
+if( DEFINED LIB_SUFFIX OR NOT CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT )
+
+ 	message( "Info: using LIB_SUFFIX to set the theme engine installation path" )
+    set( INSTALL_PATH_GTK_ENGINES "${CMAKE_INSTALL_PREFIX}/lib${LIB_SUFFIX}/gtk-2.0/${GTK_BIN_VERSION}/engines" CACHE PATH "The directory in which to install the theme engine library( eg. /usr/lib/gtk-2.0/2.4.0/engines )" )
+
+else()
+
+    exec_program(
+        ${PKGCONFIG_EXECUTABLE}
+        ARGS --variable=libdir gtk+-2.0
+        OUTPUT_VARIABLE GTK_LIBDIR_PREFIX )
+
+ 	message( "Info: using PKGCONFIG_EXECUTABLE to set the theme engine installation path" )
+    set( INSTALL_PATH_GTK_ENGINES "${GTK_LIBDIR_PREFIX}/gtk-2.0/${GTK_BIN_VERSION}/engines" CACHE PATH "The directory in which to install the theme engine library( eg. /usr/lib/gtk-2.0/2.4.0/engines )" )
+
+endif()
+
 set( INSTALL_PATH_GTK_THEMES "${CMAKE_INSTALL_PREFIX}/share/themes" CACHE PATH "The directory in which to install the theme data( eg. /usr/share/themes )" )
 set( GTK_THEME_DIR ${INSTALL_PATH_GTK_THEMES}/oxygen-gtk )
 
-# adjust flags based on gtk version
+# First emit all warnings in one place
+# Warn user if dbus-glib not found
+if( NOT DBUS_FOUND )
+    message( "Warning: dbus-glib-1 <http://dbus.freedesktop.org/releases/dbus-glib/> could not be found on your system.\nD-Bus is a simple inter-process communication system. It is used for GTK applications to be updated on the fly when KDE configuration is changed." )
+endif( NOT DBUS_FOUND )
+
+# Adjust flags based on gtk version and warn user if needed
 if( ENABLE_INNER_SHADOWS_HACK AND GTK_VERSION VERSION_LESS 2.24.2 )
-    message("  Disabling ENABLE_INNER_SHADOWS_HACK because Gtk version is too old (needed 2.24.2, found ${GTK_VERSION}) " )
+    message( "Warning: disabling inner shadows hack because GTK version is too old (needed 2.24.2, found ${GTK_VERSION})" )
     set( ENABLE_INNER_SHADOWS_HACK 0 )
-endif()
+endif( ENABLE_INNER_SHADOWS_HACK AND GTK_VERSION VERSION_LESS 2.24.2 )
 
 #########
 # summary
 #########
-message( "" )
 message( "Flags: " )
-message( "  HAVE_DBUS ${HAVE_DBUS}" )
 message( "  OXYGEN_DEBUG ${OXYGEN_DEBUG}" )
+message( "  OXYGEN_DEBUG_INNERSHADOWS ${OXYGEN_DEBUG_INNERSHADOWS}" )
+message( "  HAVE_DBUS ${HAVE_DBUS}" )
 message( "  OXYGEN_ICON_HACK ${OXYGEN_ICON_HACK}" )
 message( "  OXYGEN_FORCE_KDE_ICONS_AND_FONTS ${OXYGEN_FORCE_KDE_ICONS_AND_FONTS}" )
 message( "  ENABLE_COMBOBOX_LIST_RESIZE ${ENABLE_COMBOBOX_LIST_RESIZE}" )
 message( "  ENABLE_INNER_SHADOWS_HACK ${ENABLE_INNER_SHADOWS_HACK}" )
+message( "  ENABLE_GROUPBOX_HACK ${ENABLE_GROUPBOX_HACK}" )
 message( "" )
-message( "Path: " )
+message( "Paths: " )
 message( "  Installing the GTK theme engine library to: ${INSTALL_PATH_GTK_ENGINES}" )
 message( "  Installing the GTK theme engine data to: ${GTK_THEME_DIR}" )
 message( "" )
 
-if( NOT DBUS_FOUND )
-    message( "Warning: " )
-    message( "dbus-glib-1 <http://dbus.freedesktop.org/releases/dbus-glib/> could not be found on your system. dbus is a simple inter process communication system. It is used for Gtk applications to be updated 'on fly' when KDE configuration is changed." )
-    message( "" )
-endif( NOT DBUS_FOUND )
+##################
+# uninstall target
+##################
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake_uninstall.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
+    IMMEDIATE @ONLY)
+
+add_custom_target(uninstall
+    COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
+
 
 ######################################################################
 # Setup definitions and directories to be used for linking and include
 ######################################################################
 link_directories( ${GTK_LIBRARY_DIRS} ${CAIRO_LIBRARY_DIRS} ${DBUS_LIBRARY_DIRS} )
-include_directories( ${GTK_INCLUDE_DIRS} ${CAIRO_INCLUDE_DIRD} ${DBUS_INCLUDE_DIRS} ${X11_X11_INCLUDE_PATH} )
+include_directories( ${GTK_INCLUDE_DIRS} ${CAIRO_INCLUDE_DIRS} ${DBUS_INCLUDE_DIRS} ${X11_X11_INCLUDE_PATH} )
 
 #############################
 # generate configuration file

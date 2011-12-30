@@ -31,7 +31,6 @@ namespace Oxygen
 
     //_________________________________________
     Animations::Animations( void ):
-        _enabled( true ),
         _innerShadowsEnabled( true ),
         _hooksInitialized( false )
     {
@@ -85,14 +84,6 @@ namespace Oxygen
     {
 
         const bool animationsEnabled( settings.animationsEnabled() );
-
-        if(!settings.applicationName().isOpenOffice())
-        {
-            // inner shadows enabled state
-            setInnerShadowsEnabled( true );
-        }
-        else
-            setInnerShadowsEnabled( false );
 
         // pass animations configuration to engines
         widgetStateEngine().setApplicationName( settings.applicationName() );
@@ -197,9 +188,6 @@ namespace Oxygen
     void Animations::setEnabled( bool value )
     {
 
-        if( value == _enabled ) return;
-
-        _enabled = value;
         for( BaseEngine::List::iterator iter = _engines.begin(); iter != _engines.end(); ++iter )
         { (*iter)->setEnabled( value ); }
 
@@ -223,13 +211,15 @@ namespace Oxygen
         if( !GTK_IS_WIDGET( widget ) ) return FALSE;
 
         // groupbox labels
+        #if ENABLE_GROUPBOX_HACK
         if( static_cast<Animations*>( data )->groupBoxLabelEngine().contains( widget ) )
         {
             static_cast<Animations*>( data )->groupBoxLabelEngine().adjustSize( widget );
             return TRUE;
         }
+        #endif
 
-        # if ENABLE_COMBOBOX_LIST_RESIZE
+        #if ENABLE_COMBOBOX_LIST_RESIZE
         // comboboxes
         if( !GTK_IS_WINDOW( widget ) ) return TRUE;
 
@@ -315,8 +305,9 @@ namespace Oxygen
         if( !GTK_IS_WIDGET( widget ) ) return FALSE;
 
         if( GTK_IS_NOTEBOOK( widget ) )
-            gtk_notebook_set_show_border( GTK_NOTEBOOK(widget), FALSE );
+        { gtk_notebook_set_show_border( GTK_NOTEBOOK(widget), FALSE ); }
 
+        #if ENABLE_GROUPBOX_HACK
         if( GTK_IS_LABEL( widget ) &&  GTK_IS_FRAME( gtk_widget_get_parent( widget ) ) )
         {
 
@@ -342,6 +333,7 @@ namespace Oxygen
             }
 
         }
+        #endif
 
         return TRUE;
 

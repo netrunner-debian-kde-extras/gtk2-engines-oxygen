@@ -64,12 +64,11 @@ namespace Oxygen
 
         if( _hooksInitialized ) return;
 
-        // lookup relevant signal
-        const guint signalId( g_signal_lookup("style-set", GTK_TYPE_WINDOW ) );
-        if( signalId <= 0 ) return;
+        // colormap hooks
+        if( !_colormapHook.connect( "style-set", (GSignalEmissionHook)colormapHook, 0L ) )
+        { return; }
 
-        // install hooks
-        _colormapHook.connect( "style-set", (GSignalEmissionHook)colormapHook, 0L );
+        // parent-set hook
         _styleHook.connect( "parent-set", (GSignalEmissionHook)styleHook, this );
 
         /*
@@ -142,16 +141,17 @@ namespace Oxygen
         if( GTK_WIDGET_REALIZED( widget ) ) return TRUE;
         #endif
 
-        // cast to window
-        GtkWindow* window( GTK_WINDOW( widget ) );
-
-        // check type hint
-        GdkWindowTypeHint hint = gtk_window_get_type_hint( window );
-
         // screen
         GdkScreen* screen = gdk_screen_get_default();
         if( !screen ) return TRUE;
 
+        // colormap
+        GdkColormap* colormap(gdk_screen_get_rgba_colormap( screen ) );
+        if( !colormap ) return TRUE;
+
+        // hint
+        GtkWindow* window( GTK_WINDOW( widget ) );
+        GdkWindowTypeHint hint = gtk_window_get_type_hint( window );
         if(
             hint == GDK_WINDOW_TYPE_HINT_MENU ||
             hint == GDK_WINDOW_TYPE_HINT_DROPDOWN_MENU ||
@@ -169,7 +169,7 @@ namespace Oxygen
             #endif
 
             // assign argb colormap to widget
-            gtk_widget_set_colormap( widget, gdk_screen_get_rgba_colormap( screen ) );
+            gtk_widget_set_colormap( widget, colormap );
 
         }
 

@@ -472,6 +472,15 @@ namespace Oxygen
 
         } else {
 
+            if( GTK_IS_WINDOW( widget ) )
+            {
+
+                // check hint
+                const GdkWindowTypeHint hint( gtk_window_get_type_hint( GTK_WINDOW( widget ) ) );
+                if( hint == GDK_WINDOW_TYPE_HINT_UTILITY ) return false;
+
+            }
+
             useEvent = childrenUseEvent( widget, event, false );
 
         }
@@ -552,9 +561,12 @@ namespace Oxygen
     {
         // clear list
         _blackList.clear();
+        _blackList.push_back( "GtkScale" );
+        _blackList.push_back( "GimpColorBar" );
+        _blackList.push_back( "GladeDesignLayout" );
+        _blackList.push_back( "GooCanvas" );
         _blackList.push_back( "GtkPizza" );
         _blackList.push_back( "MetaFrames" );
-        _blackList.push_back( "GladeDesignLayout" );
         _blackList.push_back( "SPHRuler" );
         _blackList.push_back( "SPVRuler" );
     }
