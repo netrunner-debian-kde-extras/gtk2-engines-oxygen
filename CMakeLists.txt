@@ -6,14 +6,14 @@ cmake_minimum_required(VERSION 2.4)
 # Define package generation
 ###########################
 
-set( CPACK_PACKAGE_NAME "oxygen-gtk" )
-set( CPACK_SOURCE_PACKAGE_NAME "oxygen-gtk" )
+set( CPACK_PACKAGE_NAME "oxygen-gtk2" )
+set( CPACK_SOURCE_PACKAGE_NAME "oxygen-gtk2" )
 set( CPACK_SOURCE_GENERATOR TBZ2 )
-set( CPACK_PACKAGE_DESCRIPTION_SUMMARY "Oxygen Gtk theme" )
+set( CPACK_PACKAGE_DESCRIPTION_SUMMARY "Oxygen Gtk2 theme" )
 set( CPACK_PACKAGE_VENDOR "hugo@oxygen-icons.org" )
 set( CPACK_PACKAGE_VERSION_MAJOR "1" )
-set( CPACK_PACKAGE_VERSION_MINOR "1" )
-set( CPACK_PACKAGE_VERSION_PATCH "6" )
+set( CPACK_PACKAGE_VERSION_MINOR "2" )
+set( CPACK_PACKAGE_VERSION_PATCH "0" )
 set( CPACK_SOURCE_IGNORE_FILES "build" "^${PROJECT_SOURCE_DIR}.*/.git/" )
 
 ##################################
@@ -30,7 +30,7 @@ if( NOT OXYGEN_VERSION_DETECTED )
 endif( NOT OXYGEN_VERSION_DETECTED )
 message( "Detected oxygen version string: ${OXYGEN_VERSION}" )
 
-set( CPACK_SOURCE_PACKAGE_FILE_NAME "oxygen-gtk-${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}" )
+set( CPACK_SOURCE_PACKAGE_FILE_NAME "oxygen-gtk2-${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}" )
 include( CPack )
 ########################
 # Package specific flags

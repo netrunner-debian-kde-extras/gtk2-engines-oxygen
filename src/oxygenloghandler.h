@@ -1,12 +1,9 @@
-#ifndef oxygeninputdemowidget_h
-#define oxygeninputdemowidget_h
-
+#ifndef oxygenloghandler_h
+#define oxygenloghandler_h
 /*
 * this file is part of the oxygen gtk engine
 * Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
-*
-* based on the Null Theme Engine for Gtk+.
-* Copyright (c) 2008 Robert Staudinger <robert.staudinger@gmail.com>
+* Copyright (c) 2010 Ruslan Kabatsayev <b7.10110111@gmail.com>
 *
 * This  library is free  software; you can  redistribute it and/or
 * modify it  under  the terms  of the  GNU Lesser  General  Public
@@ -24,37 +21,37 @@
 * MA 02110-1301, USA.
 */
 
-#include "oxygendemowidget.h"
-#include "oxygensignal.h"
-
 #include <gtk/gtk.h>
 
 namespace Oxygen
 {
-
-    class InputDemoWidget: public DemoWidget
+    class LogHandler
     {
 
         public:
 
         //! constructor
-        InputDemoWidget( void );
+        LogHandler( void );
 
         //! destructor
-        virtual ~InputDemoWidget( void );
+        virtual ~LogHandler( void );
 
         protected:
 
-        //! wrap mode changed
-        static void wrapModeChanged( GtkToggleButton*, gpointer );
+        //!@name error handlers
+        //@{
+        static void gtkLogHandler( const gchar*, GLogLevelFlags, const gchar*, gpointer );
+        static void glibLogHandler( const gchar*, GLogLevelFlags, const gchar*, gpointer );
+        //@}
 
         private:
 
-        //! text editor
-        GtkWidget* _textView;
+        //! gtk log id
+        guint _gtkLogId;
 
-        //! toggle wrap mode
-        Signal _wrapModeChangedId;
+
+        //! glib log id
+        guint _glibLogId;
 
     };
 
