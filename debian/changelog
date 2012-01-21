@@ -1,8 +1,9 @@
-gtk2-engines-oxygen (1.1.6-2) UNRELEASED; urgency=low
+gtk2-engines-oxygen (1.2.0-1) unstable; urgency=low
 
+  * New upstream release.
   * debian/watch: Updated (upstream renamed the tarball and changed the path).
 
- -- Kai Wasserbäch <curan@debian.org>  Sat, 21 Jan 2012 20:11:50 +0100
+ -- Kai Wasserbäch <curan@debian.org>  Sat, 21 Jan 2012 20:16:06 +0100
 
 gtk2-engines-oxygen (1.1.6-1) unstable; urgency=low
 
