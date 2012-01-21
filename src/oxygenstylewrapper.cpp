@@ -2122,6 +2122,9 @@ namespace Oxygen
                         Style::instance().animations().treeViewEngine().isCellHovered( widget, cellInfo, false ) )
                     { options |= Hover; }
 
+                    // disable active flag, which is not set properly for listviews
+                    options &= ~Active;
+
                     // retrieve animation state
                     data = Style::instance().animations().treeViewStateEngine().get( widget, cellInfo, options );
 
@@ -2250,6 +2253,9 @@ namespace Oxygen
                         Style::instance().animations().treeViewEngine().contains( widget ) &&
                         Style::instance().animations().treeViewEngine().isCellHovered( widget, cellInfo, false ) )
                     { options |= Hover; }
+
+                    // disable active flag, which is not set properly for listviews
+                    options &= ~Active;
 
                     data = Style::instance().animations().treeViewStateEngine().get( widget, cellInfo, options );
 
