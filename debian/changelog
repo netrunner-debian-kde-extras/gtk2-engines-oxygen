@@ -2,6 +2,8 @@ gtk2-engines-oxygen (1.2.0-1) unstable; urgency=low
 
   * New upstream release.
   * debian/watch: Updated (upstream renamed the tarball and changed the path).
+  * debian/control: Bumped B-D on debhelper to >= 9.
+  * debian/source.lintian-overrides: Removed, no longer needed.
 
  -- Kai Wasserbäch <curan@debian.org>  Sat, 21 Jan 2012 20:16:06 +0100
 
