@@ -56,6 +56,8 @@ namespace Oxygen
         #endif
 
         reset();
+        _realizeHook.disconnect();
+
     }
 
     //______________________________________________
@@ -68,10 +70,6 @@ namespace Oxygen
 
         GdkScreen* screen = gdk_screen_get_default();
         if( !screen ) return;
-
-        #if OXYGEN_DEBUG
-        std::cerr << "Oxygen::ShadowHelper::~ShadowHelper - reset" << std::endl;
-        #endif
 
         Display* display( GDK_DISPLAY_XDISPLAY( gdk_screen_get_display( screen ) ) );
 
@@ -354,6 +352,9 @@ namespace Oxygen
             << std::endl;
         #endif
 
+        // check widget
+        if( !GTK_IS_WIDGET( widget ) ) return;
+
         // make sure handles and atom are defined
         createPixmapHandles();
 
@@ -410,7 +411,7 @@ namespace Oxygen
     void ShadowHelper::uninstallX11Shadows( GtkWidget* widget ) const
     {
 
-        if( !widget ) return;
+        if( !GTK_IS_WIDGET( widget ) ) return;
 
         GdkWindow  *window = gtk_widget_get_window( widget );
         GdkDisplay *display = gtk_widget_get_display( widget );

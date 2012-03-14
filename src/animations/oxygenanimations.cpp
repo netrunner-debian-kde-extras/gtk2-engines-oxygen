@@ -34,6 +34,9 @@ namespace Oxygen
         _innerShadowsEnabled( true ),
         _hooksInitialized( false )
     {
+        #if OXYGEN_DEBUG
+        std::cerr << "Oxygen::Animations::Animations" << std::endl;
+        #endif
 
         // create engines
         registerEngine( _backgroundHintEngine = new BackgroundHintEngine( this ) );
@@ -41,6 +44,7 @@ namespace Oxygen
         registerEngine( _comboBoxEngine = new ComboBoxEngine( this ) );
         registerEngine( _comboBoxEntryEngine = new ComboBoxEntryEngine( this ) );
         registerEngine( _dialogEngine = new DialogEngine( this ) );
+        registerEngine( _flatWidgetEngine = new FlatWidgetEngine( this ) );
         registerEngine( _groupBoxEngine = new GroupBoxEngine( this ) );
         registerEngine( _groupBoxLabelEngine = new GroupBoxLabelEngine( this ) );
         registerEngine( _hoverEngine = new HoverEngine( this ) );
@@ -68,14 +72,22 @@ namespace Oxygen
     //____________________________________________________________________________________________
     Animations::~Animations( void )
     {
+        #if OXYGEN_DEBUG
+        std::cerr << "Oxygen::Animations::~Animations" << std::endl;
+        #endif
 
         // delete all engines
         for( BaseEngine::List::iterator iter = _engines.begin(); iter != _engines.end(); ++iter )
         { delete *iter; }
 
+        // disconnect all signals from map
+        for( WidgetMap::iterator iter = _allWidgets.begin(); iter != _allWidgets.end(); iter++ )
+        { iter->second.disconnect(); }
+
         // clear hooks
         _sizeAllocationHook.disconnect();
         _realizationHook.disconnect();
+        _innerShadowHook.disconnect();
 
     }
 

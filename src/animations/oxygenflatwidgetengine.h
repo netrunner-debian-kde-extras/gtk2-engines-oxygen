@@ -1,5 +1,5 @@
-#ifndef oxygenpaneddata_h
-#define oxygenpaneddata_h
+#ifndef oxygenflatwidgetengine_h
+#define oxygenflatwidgetengine_h
 /*
 * this file is part of the oxygen gtk engine
 * Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
@@ -20,52 +20,49 @@
 * MA 02110-1301, USA.
 */
 
-#include "oxygensignal.h"
+#include "oxygenbaseengine.h"
 
 #include <gtk/gtk.h>
+#include <set>
 
 namespace Oxygen
 {
-    class PanedData
+    //! forward declaration
+    class Animations;
+
+    //! associates widgets with some type of data
+    class FlatWidgetEngine: public BaseEngine
     {
 
         public:
 
         //! constructor
-        PanedData( void ):
-            _cursorLoaded( false ),
-            _cursor( 0L )
-        {}
+        FlatWidgetEngine( Animations* widget ):
+            BaseEngine( widget )
+            {}
 
         //! destructor
-        virtual ~PanedData( void )
-        {
-            disconnect( 0L );
-            if( _cursor ) gdk_cursor_unref( _cursor );
-        }
+        virtual ~FlatWidgetEngine( void )
+        {}
 
-        //! setup connections
-        void connect( GtkWidget* );
+        //! register widget
+        virtual bool registerWidget( GtkWidget* );
 
-        //! disconnect
-        void disconnect( GtkWidget* );
+        //! unregister widget
+        virtual void unregisterWidget( GtkWidget* widget )
+        { _data.erase( widget ); }
 
-        protected:
+        //! true if widget is included
+        virtual bool contains( GtkWidget* widget )
+        { return _data.find( widget ) != _data.end(); }
 
-        //! update cursor
-        virtual void updateCursor( GtkWidget* );
-
-        //! realization hook
-        static void realizeEvent( GtkWidget*, gpointer );
+        //! true if one of widgets parent is included
+        virtual GtkWidget* flatParent( GtkWidget* );
 
         private:
 
-        //! realization signal
-        Signal _realizeId;
-
-        //! cursor
-        bool _cursorLoaded;
-        GdkCursor* _cursor;
+        //! store registered widgets
+        std::set<GtkWidget*> _data;
 
     };
 

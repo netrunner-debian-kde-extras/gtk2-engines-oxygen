@@ -45,7 +45,7 @@ namespace Oxygen
 
         //! destructor
         virtual ~TabWidgetData( void )
-        {}
+        { disconnect( _target ); }
 
         //! setup connections
         void connect( GtkWidget* );
@@ -90,6 +90,9 @@ namespace Oxygen
         //! true if is dirty
         bool isDirty( void ) const
         { return _dirty; }
+
+        //! returns true if provided point is in one tab of the widget
+        bool isInTab( int x, int y ) const;
 
         //@]
 
