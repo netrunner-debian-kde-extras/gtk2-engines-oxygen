@@ -1,6 +1,6 @@
 From: Kai Wasserbäch <curan@debian.org>
 Subject: Make building of the demos optional.
-Last-Update: 2011-09-12
+Last-Update: 2012-03-14
 Forwarded: not-needed
 ---
  CMakeLists.txt |    4 +++-
@@ -8,7 +8,7 @@ Forwarded: not-needed
 
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -199,4 +199,6 @@ configure_file( config.h.cmake ${CMAKE_B
+@@ -211,4 +211,6 @@ configure_file( config.h.cmake ${CMAKE_B
  add_subdirectory( src )
  add_subdirectory( rc )
  add_subdirectory( special-icons )

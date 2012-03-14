@@ -1,3 +1,10 @@
+gtk2-engines-oxygen (1.2.2-1) UNRELEASED; urgency=low
+
+  * New upstream release.
+  * debian/patches/dont-build-demos.patch: Refreshed.
+
+ -- Kai Wasserbäch <curan@debian.org>  Wed, 14 Mar 2012 19:06:13 +0100
+
 gtk2-engines-oxygen (1.2.0-1) unstable; urgency=low
 
   * New upstream release.
