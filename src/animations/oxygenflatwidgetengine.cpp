@@ -1,6 +1,3 @@
-#ifndef oxygencairosurfacecache_h
-#define oxygencairosurfacecache_h
-
 /*
 * this file is part of the oxygen gtk engine
 * Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
@@ -8,7 +5,7 @@
 * This  library is free  software; you can  redistribute it and/or
 * modify it  under  the terms  of the  GNU Lesser  General  Public
 * License  as published  by the Free  Software  Foundation; either
-* version 2 of the License, or( at your option ) any later version.
+* version 2 of the License, or(at your option ) any later version.
 *
 * This library is distributed  in the hope that it will be useful,
 * but  WITHOUT ANY WARRANTY; without even  the implied warranty of
@@ -21,32 +18,32 @@
 * MA 02110-1301, USA.
 */
 
-#include "oxygencache.h"
-#include "oxygencairosurface.h"
+#include "oxygenflatwidgetengine.h"
+#include "../oxygengtktypenames.h"
+#include "../oxygengtkutils.h"
+#include "../config.h"
 
-#include <cairo.h>
+#include <string>
 
 namespace Oxygen
 {
+    //_________________________________________________________
+    bool FlatWidgetEngine::registerWidget( GtkWidget* widget )
+    {
+        if( contains( widget ) ) return false;
+        _data.insert( widget );
+        BaseEngine::registerWidget( widget );
+        return true;
+    }
 
-
-    template< typename T>
-    class CairoSurfaceCache: public Cache<T, Cairo::Surface>
+    //_________________________________________________________
+    GtkWidget* FlatWidgetEngine::flatParent( GtkWidget* widget )
     {
 
-        public:
+        for( GtkWidget* parent = widget; parent; parent = gtk_widget_get_parent( parent ) )
+        { if( contains( parent ) ) return parent; }
 
-        //! constructor
-        CairoSurfaceCache( size_t size = 100 ):
-            Cache<T, Cairo::Surface>( size )
-        {}
-
-        //! destructor
-        virtual ~CairoSurfaceCache( void )
-        {}
-
-    };
+        return 0L;
+    }
 
 }
-
-#endif

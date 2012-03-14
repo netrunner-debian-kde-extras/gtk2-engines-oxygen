@@ -50,7 +50,6 @@ namespace Oxygen
     GtkStyleClass* StyleWrapper::_parentClass = 0L;
     GTypeInfo StyleWrapper::_typeInfo;
     GType StyleWrapper::_type = 0L;
-    GQuark StyleWrapper::_quarkRCStyle = 0L;
     XulInfo StyleWrapper::_xulInfo = XulInfo();
 
     //___________________________________________________________________________________________________________
@@ -69,7 +68,7 @@ namespace Oxygen
 
         ToolBarStateEngine& engine( Style::instance().animations().toolBarStateEngine() );
         engine.registerWidget(widget);
-
+        engine.setDirty( widget, false );
         if( engine.animatedRectangleIsValid( widget ) )
         {
 
@@ -154,9 +153,9 @@ namespace Oxygen
             - register the widgets to the relevant engines as below
             - pass the modified color to renderWindowBackground
             */
-            const bool hasRCStyle( g_object_get_qdata (G_OBJECT (widget), StyleWrapper::quarkRCStyle() ) );
-            if( hasRCStyle && gtk_widget_get_modifier_style(widget)->color_flags[state]&GTK_RC_BG )
+            if( Gtk::gtk_widget_style_is_modified( widget, state, GTK_RC_BG ) )
             {
+                Style::instance().animations().flatWidgetEngine().registerWidget( widget );
                 Style::instance().fill( window, clipRect, x, y, w, h, Gtk::gdk_get_color( style->bg[state] ) );
                 return;
             }
@@ -179,7 +178,9 @@ namespace Oxygen
             { Style::instance().animations().dialogEngine().registerWidget( toplevel ); }
 
             // render background gradient
-            const bool success( Style::instance().renderWindowBackground( window, clipRect, x, y, w, h ) );
+            StyleOptions options;
+            options._customColors.insert( Palette::Window, Gtk::gdk_get_color( style->bg[state] ) );
+            const bool success( Style::instance().renderWindowBackground( window, clipRect, x, y, w, h, options ) );
 
             // register to window manager
             if( success &&
@@ -194,7 +195,10 @@ namespace Oxygen
 
             // possible groupbox background
             if( d.isEventBox() && Gtk::gtk_parent_groupbox( widget ) )
-            { Style::instance().renderGroupBoxBackground( window, widget, clipRect, x, y, w, h, Blend ); }
+            {
+                options |= Blend;
+                Style::instance().renderGroupBoxBackground( window, widget, clipRect, x, y, w, h, options );
+            }
 
             // also draw possible animated tool button
             draw_animated_button( window, clipRect, widget );
@@ -207,8 +211,7 @@ namespace Oxygen
             if( Gtk::gtk_widget_is_applet( widget ) ) return;
 
             // for modified bg, fill with flat custom color
-            const bool hasRCStyle( g_object_get_qdata (G_OBJECT (widget), StyleWrapper::quarkRCStyle() ) );
-            if( hasRCStyle && gtk_widget_get_modifier_style(widget)->color_flags[state]&GTK_RC_BG )
+            if( Gtk::gtk_widget_style_is_modified( widget, state, GTK_RC_BG ) )
             {
 
                 Style::instance().fill( window, clipRect, x, y, w, h, Gtk::gdk_get_color( style->bg[state] ) );
@@ -309,8 +312,7 @@ namespace Oxygen
             bool drawTreeLines( true );
             ColorUtils::Rgba background;
 
-            const bool hasRCStyle( g_object_get_qdata (G_OBJECT (widget), StyleWrapper::quarkRCStyle() ) );
-            if( hasRCStyle && gtk_widget_get_modifier_style(widget)->color_flags[GTK_STATE_NORMAL]&GTK_RC_BASE )
+            if( Gtk::gtk_widget_style_is_modified( widget, GTK_STATE_NORMAL, GTK_RC_BASE ) )
             {
 
                 /*
@@ -521,12 +523,14 @@ namespace Oxygen
 
                     // hide left part and increase width
                     tiles &= ~TileSet::Left;
+                    Style::instance().renderHoleBackground( window, widget, clipRect, x-sideMargin-2, y, w+2*sideMargin+2, h, TileSet::Full, sideMargin );
                     Style::instance().renderHole( window, clipRect, x-9, y, w+9, h, options, data, tiles );
 
                 } else {
 
                     // hide right part and increase width
                     tiles &= ~TileSet::Right;
+                    Style::instance().renderHoleBackground( window, widget, clipRect, x-sideMargin, y, w+2*sideMargin+2, h, TileSet::Full, sideMargin );
                     Style::instance().renderHole( window, clipRect, x, y, w+9, h, options, data, tiles );
 
                 }
@@ -570,12 +574,14 @@ namespace Oxygen
 
                     // hide right part and adjust width
                     tiles &= ~TileSet::Left;
+                    Style::instance().renderHoleBackground( window, widget, clipRect, x-2-sideMargin, y, w+2*sideMargin+2, h, tiles, sideMargin );
                     Style::instance().renderHole( window, clipRect, x-7, y, w+7, h, options, data, tiles );
 
                 } else {
 
                     // hide right part and adjust width
                     tiles &= ~TileSet::Right;
+                    Style::instance().renderHoleBackground( window, widget, clipRect, x-sideMargin, y, w+2*sideMargin, h, tiles, sideMargin );
                     Style::instance().renderHole( window, clipRect, x, y, w+7, h, options, data, tiles );
 
                 }
@@ -626,6 +632,7 @@ namespace Oxygen
                 }
 
                 // render hole
+                Style::instance().renderHoleBackground( window, widget, clipRect, x-sideMargin, y, w+2*sideMargin, h, TileSet::Full, sideMargin );
                 const AnimationData data( Style::instance().animations().widgetStateEngine().get( widget, options, AnimationHover|AnimationFocus, AnimationFocus ) );
                 Style::instance().renderHole( window, clipRect, x, y, w, h, options, data, tiles );
 
@@ -1041,7 +1048,7 @@ namespace Oxygen
                 toolPalette=Gtk::gtk_widget_find_parent( widget, GTK_TYPE_TOOL_PALETTE );
                 #endif
 
-                if( !toolPalette && (parent = engine.findParent( widget ) ) )
+                if( !toolPalette && (parent = engine.findParent( widget ) ) && !engine.isDirty( parent ) )
                 {
 
                     // register child
@@ -1521,7 +1528,7 @@ namespace Oxygen
         } else if( d.isEntryProgress() ) {
 
             StyleOptions options( widget, state, shadow );
-            Style::instance().renderProgressBarHandle( window, clipRect, x-2, y-2, w+4, h+4, options );
+            Style::instance().renderProgressBarHandle( window, clipRect, x-2, y-1, w+4, h+2, options );
 
         } else if( d.isTroughFillLevel () ) {
 
@@ -2500,7 +2507,7 @@ namespace Oxygen
 
                 y+= 1;
 
-            } else if( arrow == GTK_ARROW_DOWN ) y -= 1;
+            }
 
             // disable contrast
             options &= ~Contrast;
@@ -3527,6 +3534,15 @@ namespace Oxygen
 
             pango_cairo_show_layout( context, layout );
 
+        } else if( GtkWidget* parent = Gtk::gtk_parent_button( widget ) ) {
+
+            // for flat buttons, do not use PRELIGHT color, since there is no PRELIGHT background rendered.
+            if( Gtk::gtk_button_is_flat( parent ) && ( state == GTK_STATE_PRELIGHT || state == GTK_STATE_ACTIVE )  ) state = GTK_STATE_NORMAL;
+            StyleWrapper::parentClass()->draw_layout(
+                style, window, state, use_text,
+                clipRect, widget, detail, x, y, layout );
+
+
         } else {
 
             // in all other cases, fallback on default rendering, for now
@@ -3552,7 +3568,7 @@ namespace Oxygen
         { Style::instance().windowManager().initializeHooks(); }
 
         // dbus
-        Oxygen::DBus::instance();
+        Oxygen::DBus::instance().connect();
 
         // argb hooks
         if(
