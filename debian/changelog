@@ -7,6 +7,9 @@ gtk2-engines-oxygen (1.2.4-1) UNRELEASED; urgency=low
   * debian/control: Change B-D from libdbus-glib-1-dev to libglib2.0-dev
     >= 2.26.0, preferred by upstream's build system.
 
+  [ Fathi Boudra ]
+  * Update debian/rules: use DEB_LDFLAGS_MAINT_APPEND. (Closes: #669182)
+
  -- Fathi Boudra <fabo@debian.org>  Tue, 22 May 2012 10:08:56 +0300
 
 gtk2-engines-oxygen (1.2.2-1) unstable; urgency=low
