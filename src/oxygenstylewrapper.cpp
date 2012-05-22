@@ -33,7 +33,6 @@
 #include "oxygenanimations.h"
 #include "oxygenargbhelper.h"
 #include "oxygencairoutils.h"
-#include "oxygendbus.h"
 #include "oxygengtkcellinfo.h"
 #include "oxygengtkdetails.h"
 #include "oxygengtktypenames.h"
@@ -68,7 +67,6 @@ namespace Oxygen
 
         ToolBarStateEngine& engine( Style::instance().animations().toolBarStateEngine() );
         engine.registerWidget(widget);
-        engine.setDirty( widget, false );
         if( engine.animatedRectangleIsValid( widget ) )
         {
 
@@ -118,7 +116,7 @@ namespace Oxygen
         #endif
 
         const Gtk::Detail d( detail );
-        if( d.isBase() || d.isEventBox() )
+        if( d.isBase() || d.isEventBox() || (d.isNull() && Gtk::g_object_is_a( G_OBJECT( widget ), "ShellWindow" ) ) )
         {
 
             // if background pixmap is provided, fallback to default painting
@@ -155,7 +153,7 @@ namespace Oxygen
             */
             if( Gtk::gtk_widget_style_is_modified( widget, state, GTK_RC_BG ) )
             {
-                Style::instance().animations().flatWidgetEngine().registerWidget( widget );
+                Style::instance().animations().flatWidgetEngine().registerFlatWidget( widget );
                 Style::instance().fill( window, clipRect, x, y, w, h, Gtk::gdk_get_color( style->bg[state] ) );
                 return;
             }
@@ -182,6 +180,10 @@ namespace Oxygen
             options._customColors.insert( Palette::Window, Gtk::gdk_get_color( style->bg[state] ) );
             const bool success( Style::instance().renderWindowBackground( window, clipRect, x, y, w, h, options ) );
 
+            // if widget has flat parent, store in flatWidget engine so that children gets the right background nonetheless
+            if( success && Style::instance().animations().flatWidgetEngine().flatParent( widget ) )
+            { Style::instance().animations().flatWidgetEngine().registerPaintWidget( widget ); }
+
             // register to window manager
             if( success &&
                 Gtk::gdk_window_is_base( window ) &&
@@ -201,7 +203,8 @@ namespace Oxygen
             }
 
             // also draw possible animated tool button
-            draw_animated_button( window, clipRect, widget );
+            if( !d.isNull() )
+            { draw_animated_button( window, clipRect, widget ); }
 
             return;
 
@@ -1048,7 +1051,7 @@ namespace Oxygen
                 toolPalette=Gtk::gtk_widget_find_parent( widget, GTK_TYPE_TOOL_PALETTE );
                 #endif
 
-                if( !toolPalette && (parent = engine.findParent( widget ) ) && !engine.isDirty( parent ) )
+                if( !toolPalette && (parent = engine.findParent( widget ) ) )
                 {
 
                     // register child
@@ -1272,6 +1275,12 @@ namespace Oxygen
             Style::instance().renderWindowBackground( window, clipRect, x, y, w, h );
 
         } else if( d.isMenuItem() ) {
+
+            if( GTK_IS_MENU_ITEM( widget ) )
+            {
+                GtkWidget* child( gtk_bin_get_child( GTK_BIN( widget ) ) );
+                Style::instance().animations().menuItemEngine().registerWidget( child );
+            }
 
             GtkWidget* parent( gtk_widget_get_parent( widget ) );
             AnimationData data;
@@ -3566,9 +3575,6 @@ namespace Oxygen
         // window manager hooks
         if( !Style::instance().settings().applicationName().isEclipse() )
         { Style::instance().windowManager().initializeHooks(); }
-
-        // dbus
-        Oxygen::DBus::instance().connect();
 
         // argb hooks
         if(

@@ -1,9 +1,9 @@
-#ifndef oxygensignal_h
-#define oxygensignal_h
-
+#ifndef oxygenmenuitemdata_h
+#define oxygenmenuitemdata_h
 /*
 * this file is part of the oxygen gtk engine
 * Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Ruslan Kabatsayev <b7.10110111@gmail.com>
 *
 * This  library is free  software; you can  redistribute it and/or
 * modify it  under  the terms  of the  GNU Lesser  General  Public
@@ -21,46 +21,52 @@
 * MA 02110-1301, USA.
 */
 
+#include "oxygensignal.h"
+#include "oxygentimer.h"
+
 #include <gtk/gtk.h>
-#include <cassert>
-#include <string>
 
 namespace Oxygen
 {
-    //! handles gtk signal connections
-    class Signal
+    // track main window resize events
+    class MenuItemData
     {
+
         public:
 
         //! constructor
-        Signal( void ):
-            _id(0),
-            _object(0L)
+        MenuItemData( void ):
+            _target(0)
         {}
 
         //! destructor
-        virtual ~Signal( void )
-        {}
+        virtual ~MenuItemData( void )
+        { disconnect( _target ); }
 
-        //! true if connected
-        bool isConnected( void ) const
-        { return _id > 0 && _object; }
-
-        //! connect
-        bool connect( GObject*, const std::string&, GCallback, gpointer, bool after=false );
+        //! setup connections
+        void connect( GtkWidget* );
 
         //! disconnect
-        void disconnect( void );
+        void disconnect( GtkWidget* );
+
+        protected:
+
+        //! attach style of widget to passed window [recursive]
+        void attachStyle( GtkWidget*, GdkWindow* ) const;
+
+        //! parent set callback
+        static void parentSet( GtkWidget*, GtkWidget*, gpointer );
 
         private:
 
-        //! signal id
-        guint _id;
+        //! target
+        GtkWidget* _target;
 
-        //! connected object
-        GObject* _object;
+        //! reparent signal id
+        Signal _parentSetId;
 
     };
 
 }
+
 #endif

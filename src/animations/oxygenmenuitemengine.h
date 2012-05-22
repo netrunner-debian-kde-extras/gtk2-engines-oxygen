@@ -1,6 +1,5 @@
-#ifndef oxygensignal_h
-#define oxygensignal_h
-
+#ifndef oxygenmenuitemengine_h
+#define oxygenmenuitemengine_h
 /*
 * this file is part of the oxygen gtk engine
 * Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
@@ -21,46 +20,39 @@
 * MA 02110-1301, USA.
 */
 
+
+#include "oxygengenericengine.h"
+#include "oxygendatamap.h"
+#include "oxygenmenuitemdata.h"
+
 #include <gtk/gtk.h>
-#include <cassert>
-#include <string>
 
 namespace Oxygen
 {
-    //! handles gtk signal connections
-    class Signal
+    //! forward declaration
+    class Animations;
+
+    //! stores data associated to editable menuitemes
+    /*!
+    ensures that the text entry and the button of editable menuitemes
+    gets hovered and focus flags at the same time
+    */
+    class MenuItemEngine: public GenericEngine<MenuItemData>
     {
+
         public:
 
         //! constructor
-        Signal( void ):
-            _id(0),
-            _object(0L)
-        {}
+        MenuItemEngine( Animations* widget ):
+            GenericEngine<MenuItemData>( widget )
+            {}
 
         //! destructor
-        virtual ~Signal( void )
+        virtual ~MenuItemEngine( void )
         {}
-
-        //! true if connected
-        bool isConnected( void ) const
-        { return _id > 0 && _object; }
-
-        //! connect
-        bool connect( GObject*, const std::string&, GCallback, gpointer, bool after=false );
-
-        //! disconnect
-        void disconnect( void );
-
-        private:
-
-        //! signal id
-        guint _id;
-
-        //! connected object
-        GObject* _object;
 
     };
 
 }
+
 #endif

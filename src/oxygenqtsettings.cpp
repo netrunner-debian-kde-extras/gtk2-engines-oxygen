@@ -101,7 +101,11 @@ namespace Oxygen
 
         _kdeGlobals.clear();
         for( PathList::const_reverse_iterator iter = _kdeConfigPathList.rbegin(); iter != _kdeConfigPathList.rend(); ++iter )
-        { _kdeGlobals.merge( OptionMap( sanitizePath( *iter + "/kdeglobals" ) ) ); }
+        {
+            const std::string filename( sanitizePath( *iter + "/kdeglobals" ) );
+            _kdeGlobals.merge( OptionMap( filename ) );
+            monitorFile( filename );
+        }
 
         #if OXYGEN_DEBUG
         std::cerr << "Oxygen::QtSettings::loadKdeGlobals - kdeglobals: " << std::endl;
@@ -180,23 +184,8 @@ namespace Oxygen
             generateGtkColors();
         }
 
-        // deal with pathbar button margins
-        // this needs to be done programatically in order to properly account for RTL locales
-        _rc.addSection( "oxygen-pathbutton-internal", Gtk::RC::defaultSection() );
-        _rc.addToCurrentSection( "  GtkButton::inner-border = { 2, 2, 1, 0 }" );
-
-        if( gtk_widget_get_default_direction() == GTK_TEXT_DIR_RTL )
-        {
-
-            _rc.addToCurrentSection( "  GtkToggleButton::inner-border={ 10, 0, 1, 0 }" );
-
-        } else {
-
-            _rc.addToCurrentSection( "  GtkToggleButton::inner-border={ 0, 10, 1, 0 }" );
-
-        }
-
-        _rc.matchWidgetClassToSection( "*PathBar.GtkToggleButton", "oxygen-pathbutton-internal" );
+        // apply extra programatically set metrics metrics
+        loadExtraOptions();
 
         // print generated Gtkrc and commit
         #if OXYGEN_DEBUG
@@ -846,7 +835,11 @@ namespace Oxygen
 
         OptionMap oxygen;
         for( PathList::const_reverse_iterator iter = _kdeConfigPathList.rbegin(); iter != _kdeConfigPathList.rend(); ++iter )
-        { oxygen.merge( OptionMap( sanitizePath( *iter + "/oxygenrc" ) ) ); }
+        {
+            const std::string filename( sanitizePath( *iter + "/oxygenrc" ) );
+            oxygen.merge( filename );
+            monitorFile( filename );
+        }
 
         #if OXYGEN_DEBUG
         std::cerr << "Oxygen::QtSettings::loadOxygenOptions - Oxygenrc: " << std::endl;
@@ -1037,6 +1030,42 @@ namespace Oxygen
     }
 
     //_________________________________________________________
+    void QtSettings::loadExtraOptions( void )
+    {
+
+        // deal with pathbar button margins
+        // this needs to be done programatically in order to properly account for RTL locales
+        _rc.addSection( "oxygen-pathbutton-internal", Gtk::RC::defaultSection() );
+        _rc.addToCurrentSection( "  GtkButton::inner-border = { 2, 2, 1, 0 }" );
+
+        if( gtk_widget_get_default_direction() == GTK_TEXT_DIR_RTL )
+        {
+
+            _rc.addToCurrentSection( "  GtkToggleButton::inner-border={ 10, 0, 1, 0 }" );
+
+        } else {
+
+            _rc.addToCurrentSection( "  GtkToggleButton::inner-border={ 0, 10, 1, 0 }" );
+
+        }
+
+        _rc.matchWidgetClassToSection( "*PathBar.GtkToggleButton", "oxygen-pathbutton-internal" );
+
+        // entry margins
+        _rc.addSection( "oxygen-entry-margins-internal", Gtk::RC::defaultSection() );
+        _rc.addToCurrentSection( Gtk::RCOption<int>( "  xthickness", 5 ) );
+        _rc.addToCurrentSection( Gtk::RCOption<int>( "  ythickness", applicationName().isXul() ? 2:1 ) );
+        _rc.matchClassToSection( "GtkEntry", "oxygen-entry-margins-internal" );
+
+        // combobox buttons
+        _rc.addSection( "oxygen-combobox-button-internal", Gtk::RC::defaultSection() );
+        _rc.addToCurrentSection( Gtk::RCOption<int>( "  xthickness", 2 ) );
+        _rc.addToCurrentSection( Gtk::RCOption<int>( "  ythickness", applicationName().isXul() ? 2:0 ) );
+        _rc.matchWidgetClassToSection( "*<GtkComboBox>.<GtkButton>", "oxygen-combobox-button-internal" );
+
+    }
+
+    //_________________________________________________________
     std::string QtSettings::sanitizePath( const std::string& path ) const
     {
 
@@ -1046,6 +1075,50 @@ namespace Oxygen
         { out.replace( position, 2, "/" ); }
 
         return out;
+    }
+
+    //_________________________________________________________
+    void QtSettings::monitorFile( const std::string& filename )
+    {
+
+        // check if file was already added
+        if( _monitoredFiles.find( filename ) != _monitoredFiles.end() )
+        { return; }
+
+        // check file existence
+        if( !std::ifstream( filename.c_str() ) )
+        { return; }
+
+        // create FileMonitor
+        FileMonitor monitor;
+        monitor.file = g_file_new_for_path( filename.c_str() );
+        if( ( monitor.monitor = g_file_monitor( monitor.file, G_FILE_MONITOR_NONE, 0L, 0L ) ) )
+        {
+
+            // insert in map
+            _monitoredFiles.insert( std::make_pair( filename, monitor ) );
+
+        } else {
+
+            // clear file and return
+            g_object_unref( monitor.file );
+            return;
+
+        }
+
+    }
+
+    //_________________________________________________________
+    void QtSettings::clearMonitoredFiles( void )
+    {
+        for( FileMap::iterator iter = _monitoredFiles.begin(); iter != _monitoredFiles.end(); iter++ )
+        {
+            iter->second.signal.disconnect();
+            g_object_unref( iter->second.file );
+            g_object_unref( iter->second.monitor );
+        }
+
+        _monitoredFiles.clear();
     }
 
 }
