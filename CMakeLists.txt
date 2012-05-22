@@ -6,14 +6,14 @@ cmake_minimum_required(VERSION 2.4)
 # Define package generation
 ###########################
 
-set( CPACK_PACKAGE_NAME "oxygen-gtk" )
-set( CPACK_SOURCE_PACKAGE_NAME "oxygen-gtk" )
+set( CPACK_PACKAGE_NAME "oxygen-gtk2" )
+set( CPACK_SOURCE_PACKAGE_NAME "oxygen-gtk2" )
 set( CPACK_SOURCE_GENERATOR TBZ2 )
-set( CPACK_PACKAGE_DESCRIPTION_SUMMARY "Oxygen Gtk theme" )
+set( CPACK_PACKAGE_DESCRIPTION_SUMMARY "Oxygen Gtk2 theme" )
 set( CPACK_PACKAGE_VENDOR "hugo@oxygen-icons.org" )
 set( CPACK_PACKAGE_VERSION_MAJOR "1" )
-set( CPACK_PACKAGE_VERSION_MINOR "1" )
-set( CPACK_PACKAGE_VERSION_PATCH "6" )
+set( CPACK_PACKAGE_VERSION_MINOR "2" )
+set( CPACK_PACKAGE_VERSION_PATCH "4" )
 set( CPACK_SOURCE_IGNORE_FILES "build" "^${PROJECT_SOURCE_DIR}.*/.git/" )
 
 ##################################
@@ -30,7 +30,7 @@ if( NOT OXYGEN_VERSION_DETECTED )
 endif( NOT OXYGEN_VERSION_DETECTED )
 message( "Detected oxygen version string: ${OXYGEN_VERSION}" )
 
-set( CPACK_SOURCE_PACKAGE_FILE_NAME "oxygen-gtk-${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}" )
+set( CPACK_SOURCE_PACKAGE_FILE_NAME "oxygen-gtk2-${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}" )
 include( CPack )
 ########################
 # Package specific flags
@@ -45,6 +45,11 @@ endif( NOT DEFINED OXYGEN_DEBUG )
 if( NOT DEFINED OXYGEN_DEBUG_INNERSHADOWS )
     set( OXYGEN_DEBUG_INNERSHADOWS 0 )
 endif( NOT DEFINED OXYGEN_DEBUG_INNERSHADOWS )
+
+# Set to 1 to build windeco test app (normal users rarely need this)
+if( NOT DEFINED BUILD_DECO_TEST )
+    set( BUILD_DECO_TEST 0 )
+endif( NOT DEFINED BUILD_DECO_TEST )
 
 # Set to 1 to replace gtk stock icons
 # with oxygen-icons
@@ -87,7 +92,7 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
         ARGS --variable=prefix gtk+-2.0
         OUTPUT_VARIABLE GTK_PREFIX )
 
-  	message( "Info: using PKGCONFIG_EXECUTABLE to set the installation prefix" )
+    message( "Info: using PKGCONFIG_EXECUTABLE to set the installation prefix" )
     set(CMAKE_INSTALL_PREFIX
         ${GTK_PREFIX} CACHE PATH "GTK install prefix" FORCE
         )
@@ -105,13 +110,6 @@ pkg_check_modules( GTK REQUIRED gtk+-2.0 )
 # Cairo
 pkg_check_modules( CAIRO REQUIRED cairo )
 
-# DBus
-set( HAVE_DBUS 0 )
-pkg_check_modules( DBUS dbus-glib-1 )
-if( DBUS_FOUND )
-    set( HAVE_DBUS 1 )
-endif()
-
 ##########################
 # installation directories
 ##########################
@@ -122,7 +120,7 @@ exec_program(
 
 if( DEFINED LIB_SUFFIX OR NOT CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT )
 
- 	message( "Info: using LIB_SUFFIX to set the theme engine installation path" )
+    message( "Info: using LIB_SUFFIX to set the theme engine installation path" )
     set( INSTALL_PATH_GTK_ENGINES "${CMAKE_INSTALL_PREFIX}/lib${LIB_SUFFIX}/gtk-2.0/${GTK_BIN_VERSION}/engines" CACHE PATH "The directory in which to install the theme engine library( eg. /usr/lib/gtk-2.0/2.4.0/engines )" )
 
 else()
@@ -132,7 +130,7 @@ else()
         ARGS --variable=libdir gtk+-2.0
         OUTPUT_VARIABLE GTK_LIBDIR_PREFIX )
 
- 	message( "Info: using PKGCONFIG_EXECUTABLE to set the theme engine installation path" )
+    message( "Info: using PKGCONFIG_EXECUTABLE to set the theme engine installation path" )
     set( INSTALL_PATH_GTK_ENGINES "${GTK_LIBDIR_PREFIX}/gtk-2.0/${GTK_BIN_VERSION}/engines" CACHE PATH "The directory in which to install the theme engine library( eg. /usr/lib/gtk-2.0/2.4.0/engines )" )
 
 endif()
@@ -141,11 +139,6 @@ set( INSTALL_PATH_GTK_THEMES "${CMAKE_INSTALL_PREFIX}/share/themes" CACHE PATH "
 set( GTK_THEME_DIR ${INSTALL_PATH_GTK_THEMES}/oxygen-gtk )
 
 # First emit all warnings in one place
-# Warn user if dbus-glib not found
-if( NOT DBUS_FOUND )
-    message( "Warning: dbus-glib-1 <http://dbus.freedesktop.org/releases/dbus-glib/> could not be found on your system.\nD-Bus is a simple inter-process communication system. It is used for GTK applications to be updated on the fly when KDE configuration is changed." )
-endif( NOT DBUS_FOUND )
-
 # Adjust flags based on gtk version and warn user if needed
 if( ENABLE_INNER_SHADOWS_HACK AND GTK_VERSION VERSION_LESS 2.24.2 )
     message( "Warning: disabling inner shadows hack because GTK version is too old (needed 2.24.2, found ${GTK_VERSION})" )
@@ -157,8 +150,8 @@ endif( ENABLE_INNER_SHADOWS_HACK AND GTK_VERSION VERSION_LESS 2.24.2 )
 #########
 message( "Flags: " )
 message( "  OXYGEN_DEBUG ${OXYGEN_DEBUG}" )
+message( "  BUILD_DECO_TEST ${BUILD_DECO_TEST}" )
 message( "  OXYGEN_DEBUG_INNERSHADOWS ${OXYGEN_DEBUG_INNERSHADOWS}" )
-message( "  HAVE_DBUS ${HAVE_DBUS}" )
 message( "  OXYGEN_ICON_HACK ${OXYGEN_ICON_HACK}" )
 message( "  OXYGEN_FORCE_KDE_ICONS_AND_FONTS ${OXYGEN_FORCE_KDE_ICONS_AND_FONTS}" )
 message( "  ENABLE_COMBOBOX_LIST_RESIZE ${ENABLE_COMBOBOX_LIST_RESIZE}" )
@@ -185,8 +178,8 @@ add_custom_target(uninstall
 ######################################################################
 # Setup definitions and directories to be used for linking and include
 ######################################################################
-link_directories( ${GTK_LIBRARY_DIRS} ${CAIRO_LIBRARY_DIRS} ${DBUS_LIBRARY_DIRS} )
-include_directories( ${GTK_INCLUDE_DIRS} ${CAIRO_INCLUDE_DIRS} ${DBUS_INCLUDE_DIRS} ${X11_X11_INCLUDE_PATH} )
+link_directories( ${GTK_LIBRARY_DIRS} ${CAIRO_LIBRARY_DIRS} )
+include_directories( ${GTK_INCLUDE_DIRS} ${CAIRO_INCLUDE_DIRS} ${X11_X11_INCLUDE_PATH} )
 
 #############################
 # generate configuration file

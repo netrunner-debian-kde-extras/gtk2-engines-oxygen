@@ -62,7 +62,8 @@ style "oxygen-default"
 
     GtkTreeView::allow-rules = 1
     GtkTreeView::row-ending-details = 1
-    GtkTreeView::expander-size = 15
+    GtkTreeView::expander-size = 10
+    GtkTreeView::vertical-separator = 0
 
     # shadow types
     GtkMenuBar::shadow-type = GTK_SHADOW_NONE
@@ -84,16 +85,6 @@ style "oxygen-sizegrip" = "oxygen-default"
 }
 
 class "GtkWidget" style "oxygen-sizegrip"
-
-# entries
-# do not change unless also changing Entry_SideMargin in OxygenStyle.h
-style "oxygen-entry-margins" = "oxygen-default"
-{
-    xthickness = 5
-    ythickness = 2
-}
-
-class "GtkEntry" style "oxygen-entry-margins"
 
 # menuitems padding
 style "oxygen-menubar" = "oxygen-default"
@@ -181,14 +172,7 @@ style "oxygen-combobox-entry" = "oxygen-default"
 
 class "GtkComboBoxEntry" style "oxygen-combobox-entry"
 
-style "oxygen-combobox-entry-button" = "oxygen-combobox-entry"
-{
-    ythickness = 2
-    xthickness = 2
-}
-
-widget_class "*<GtkComboBoxEntry>.<GtkButton>" style "oxygen-combobox-entry-button"
-
+# GtkCombo
 style "oxygen-combo-button" = "oxygen-combobox-entry"
 {
     xthickness = 0

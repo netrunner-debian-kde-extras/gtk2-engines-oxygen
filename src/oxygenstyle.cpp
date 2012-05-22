@@ -29,6 +29,8 @@
 #include "oxygenwindecobutton.h"
 #include "oxygenwindowshadow.h"
 
+#include "oxygengtktypenames.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -66,6 +68,14 @@ namespace Oxygen
 
         // reinitialize settings
         _settings.initialize( flags );
+
+        // connect files
+        QtSettings::FileMap& monitoredFiles( _settings.monitoredFiles() );
+        for( QtSettings::FileMap::iterator iter = monitoredFiles.begin(); iter != monitoredFiles.end(); ++iter )
+        {
+            if( !iter->second.signal.isConnected() )
+            { iter->second.signal.connect( G_OBJECT( iter->second.monitor ), "changed", G_CALLBACK(fileChanged), this ); }
+        }
 
         // reinitialize animations
         _animations.initialize( _settings );
@@ -754,22 +764,36 @@ namespace Oxygen
         // do nothing if not enough room
         if( w < 14 || h < 14 )  return;
 
-        // test for flatness
+        // add hole mask
+        Cairo::Context context( window, clipRect );
+        renderHoleMask( context, x, y, w, h, tiles, sideMargin );
+
         if( (options&Flat) || Style::instance().settings().applicationName().useFlatBackground( widget ) )
         {
 
             // create a rounded-rect antimask for renderHoleBackground
-            Cairo::Context context( window, clipRect );
-            renderHoleMask( context, x, y, w, h, tiles, sideMargin );
             cairo_set_source( context, settings().palette().color( Palette::Window ) );
             cairo_rectangle( context, x, y, w, h );
             cairo_fill( context );
 
-        } else {
+        } else if( GtkWidget* parent = animations().flatWidgetEngine().flatParent( widget ) ) {
 
-            // add hole if required (this can be done before translating the context)
-            Cairo::Context context( window, clipRect );
-            renderHoleMask( context, x, y, w, h, tiles, sideMargin );
+            // get background color and fill
+            if( Gtk::gtk_widget_style_is_modified( parent, GTK_STATE_NORMAL, GTK_RC_BG ) )
+            {
+
+                cairo_set_source( context, Gtk::gdk_get_color( gtk_widget_get_modifier_style( parent )->bg[GTK_STATE_NORMAL] ) );
+
+            } else {
+
+                cairo_set_source( context, settings().palette().color( Palette::Window ) );
+
+            }
+
+            cairo_rectangle( context, x, y, w, h );
+            cairo_fill( context );
+
+        } else {
 
             // normal window background
             renderWindowBackground( context, window, 0L, clipRect, x, y, w, h, options, tiles);
@@ -1467,7 +1491,7 @@ namespace Oxygen
         x = int( double(child.x + child.width/2) - 3.5 );
         y = int( double(child.y + child.height/2) - 2.5 );
 
-        if( shadow == GTK_SHADOW_IN || shadow == GTK_SHADOW_ETCHED_IN )
+        if( shadow == GTK_SHADOW_IN || shadow == GTK_SHADOW_ETCHED_IN || options&Active )
         {
 
             cairo_set_line_cap( context, CAIRO_LINE_CAP_ROUND );
@@ -1477,8 +1501,15 @@ namespace Oxygen
             Palette::Group group( (options&Disabled) ? Palette::Disabled : Palette::Active );
             const ColorUtils::Rgba& color( settings().palette().color( group, ( options&Flat ) ? Palette::WindowText : Palette::ButtonText ) );
             const ColorUtils::Rgba& background( settings().palette().color( ( options&Flat ) ? Palette::Window : Palette::Button ) );
-            const ColorUtils::Rgba& base( ColorUtils::decoColor( background, color ) );
-            const ColorUtils::Rgba& contrast( ColorUtils::lightColor( background ) );
+
+            ColorUtils::Rgba base( ColorUtils::decoColor( background, color ) );
+            ColorUtils::Rgba contrast( ColorUtils::lightColor( background ) );
+
+            if( options&Active )
+            {
+                base = ColorUtils::alphaColor( base, 0.3 );
+                contrast = ColorUtils::alphaColor( contrast, 0.3 );
+            }
 
             cairo_translate( context, 0.5, 0.5 );
 
@@ -1626,40 +1657,50 @@ namespace Oxygen
         cairo_fill( context );
         cairo_restore( context );
 
-        if( shadow == GTK_SHADOW_IN || shadow == GTK_SHADOW_ETCHED_IN )
+        if( shadow == GTK_SHADOW_IN || shadow == GTK_SHADOW_ETCHED_IN || options&Active )
         {
-            double radius( shadow == GTK_SHADOW_IN ? 2.6:1.4 );
+            double radius( shadow == GTK_SHADOW_ETCHED_IN ? 1.4:2.6 );
             radius *= scale;
 
             const double dx( 0.5*child.width - radius );
             const double dy( 0.5*child.height - radius );
 
-            const ColorUtils::Rgba background( settings().palette().color( Palette::Button ) );
-            const ColorUtils::Rgba color( settings().palette().color( group, Palette::ButtonText ) );
+            const ColorUtils::Rgba& background( settings().palette().color( Palette::Button ) );
+            const ColorUtils::Rgba& color( settings().palette().color( group, Palette::ButtonText ) );
+
+            ColorUtils::Rgba base( ColorUtils::decoColor( background, color ) );
+            ColorUtils::Rgba contrast( ColorUtils::lightColor( background ) );
+
+            if( options&Active )
+            {
+                base = ColorUtils::alphaColor( base, 0.3 );
+                contrast = ColorUtils::alphaColor( contrast, 0.3 );
+            }
+
 
             cairo_save( context );
             cairo_translate( context, 0, radius/2 );
             cairo_ellipse( context, x+dx, y+dy, child.width - 2*dx, child.height -2*dy );
             cairo_restore( context );
-            if( shadow == GTK_SHADOW_IN )
+            if( shadow == GTK_SHADOW_ETCHED_IN )
             {
 
-                cairo_set_source( context, ColorUtils::lightColor( background ) );
-                cairo_fill( context );
+                cairo_set_line_width( context, 1.3 );
+                cairo_set_source( context, contrast );
+                cairo_stroke( context );
 
-                cairo_set_source( context, ColorUtils::decoColor( background, color ) );
+                cairo_set_source( context, base );
                 cairo_ellipse( context, x+dx, y+dy, child.width - 2*dx, child.height -2*dy );
-                cairo_fill( context );
+                cairo_stroke( context );
 
             } else {
 
-                cairo_set_line_width( context, 1.3 );
-                cairo_set_source( context, ColorUtils::lightColor( background ) );
-                cairo_stroke( context );
+                cairo_set_source( context, contrast );
+                cairo_fill( context );
 
-                cairo_set_source( context, ColorUtils::decoColor( background, color ) );
+                cairo_set_source( context, base );
                 cairo_ellipse( context, x+dx, y+dy, child.width - 2*dx, child.height -2*dy );
-                cairo_stroke( context );
+                cairo_fill( context );
 
             }
 
@@ -2564,7 +2605,7 @@ namespace Oxygen
                         pango_font_description_set_family( fdesc, font.family().c_str() );
                         pango_font_description_set_weight( fdesc, PangoWeight( (font.weight()+2)*10 ) );
                         pango_font_description_set_style( fdesc, font.italic() ? PANGO_STYLE_ITALIC : PANGO_STYLE_NORMAL );
-                        pango_font_description_set_size( fdesc, int(font.size()*PANGO_SCALE) );
+                        pango_font_description_set_absolute_size( fdesc, int(font.size()*PANGO_SCALE) );
 
                         PangoLayout* layout( pango_cairo_create_layout(context) );
                         pango_layout_set_text( layout,caption, -1 );
@@ -3766,6 +3807,23 @@ namespace Oxygen
         cairo_clip( context );
 
         return;
+
+    }
+
+    //_________________________________________________________
+    void Style::fileChanged( GFileMonitor*, GFile* file, GFile*, GFileMonitorEvent event, gpointer data )
+    {
+
+        #if OXYGEN_DEBUG
+        std::cerr << "Oxygen::Style::fileChanged -"
+            << " file: " << g_file_get_path( file )
+            << " event: " << Gtk::TypeNames::fileMonitorEvent( event )
+            << std::endl;
+        #endif
+
+        Style& style( *static_cast<Style*>( data ) );
+        style.initialize( QtSettings::All|QtSettings::Forced );
+        gtk_rc_reset_styles( gtk_settings_get_default() );
 
     }
 

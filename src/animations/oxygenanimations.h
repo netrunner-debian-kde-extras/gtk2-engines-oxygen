@@ -28,12 +28,14 @@
 #include "oxygencomboboxengine.h"
 #include "oxygencomboboxentryengine.h"
 #include "oxygendialogengine.h"
+#include "oxygenflatwidgetengine.h"
 #include "oxygengroupboxengine.h"
 #include "oxygengroupboxlabelengine.h"
 #include "oxygenhook.h"
 #include "oxygenhoverengine.h"
 #include "oxygenmainwindowengine.h"
 #include "oxygenmenubarstateengine.h"
+#include "oxygenmenuitemengine.h"
 #include "oxygenmenustateengine.h"
 #include "oxygenpanedengine.h"
 #include "oxygenscrollbarengine.h"
@@ -110,6 +112,10 @@ namespace Oxygen
         DialogEngine& dialogEngine( void ) const
         { return *_dialogEngine; }
 
+        //! flat widget
+        FlatWidgetEngine& flatWidgetEngine( void ) const
+        { return *_flatWidgetEngine; }
+
         //! groupbox engine
         GroupBoxEngine& groupBoxEngine( void ) const
         { return *_groupBoxEngine; }
@@ -121,6 +127,10 @@ namespace Oxygen
         //! main window engine
         MainWindowEngine& mainWindowEngine( void ) const
         { return *_mainWindowEngine; }
+
+        //! menu item engine
+        MenuItemEngine& menuItemEngine( void ) const
+        { return *_menuItemEngine; }
 
         //! hover engine
         HoverEngine& hoverEngine( void ) const
@@ -236,6 +246,9 @@ namespace Oxygen
         //! dialog engine
         DialogEngine* _dialogEngine;
 
+        //! flat widget
+        FlatWidgetEngine* _flatWidgetEngine;
+
         //! groupbox engine
         GroupBoxEngine* _groupBoxEngine;
 
@@ -247,6 +260,9 @@ namespace Oxygen
 
         //! main window engine
         MainWindowEngine* _mainWindowEngine;
+
+        //! menu item engine
+        MenuItemEngine* _menuItemEngine;
 
         //! paned engine
         PanedEngine* _panedEngine;
@@ -316,25 +332,8 @@ namespace Oxygen
 
         //@}
 
-        //! keep track of destruction and style change signals
-        /*!
-        this is needed so that signals are disconnected when either
-        the style change or the widget is destroyed
-        */
-        class WidgetData
-        {
-
-            public:
-
-            //! constructor
-            WidgetData( void )
-            {}
-
-            Signal _destroyId;
-        };
-
         //! keep track of all registered widgets, and associated destroy callback
-        typedef std::map< GtkWidget*, WidgetData > WidgetMap;
+        typedef std::map< GtkWidget*, Signal > WidgetMap;
         WidgetMap _allWidgets;
 
     };

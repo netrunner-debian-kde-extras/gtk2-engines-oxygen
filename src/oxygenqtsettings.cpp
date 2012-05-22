@@ -25,6 +25,7 @@
 #include "oxygenfontinfo.h"
 #include "oxygengtkicons.h"
 #include "oxygengtkrc.h"
+#include "oxygentimeline.h"
 #include "config.h"
 
 #include <gtk/gtk.h>
@@ -100,7 +101,11 @@ namespace Oxygen
 
         _kdeGlobals.clear();
         for( PathList::const_reverse_iterator iter = _kdeConfigPathList.rbegin(); iter != _kdeConfigPathList.rend(); ++iter )
-        { _kdeGlobals.merge( OptionMap( sanitizePath( *iter + "/kdeglobals" ) ) ); }
+        {
+            const std::string filename( sanitizePath( *iter + "/kdeglobals" ) );
+            _kdeGlobals.merge( OptionMap( filename ) );
+            monitorFile( filename );
+        }
 
         #if OXYGEN_DEBUG
         std::cerr << "Oxygen::QtSettings::loadKdeGlobals - kdeglobals: " << std::endl;
@@ -179,23 +184,8 @@ namespace Oxygen
             generateGtkColors();
         }
 
-        // deal with pathbar button margins
-        // this needs to be done programatically in order to properly account for RTL locales
-        _rc.addSection( "oxygen-pathbutton-internal", Gtk::RC::defaultSection() );
-        _rc.addToCurrentSection( "  GtkButton::inner-border = { 2, 2, 1, 0 }" );
-
-        if( gtk_widget_get_default_direction() == GTK_TEXT_DIR_RTL )
-        {
-
-            _rc.addToCurrentSection( "  GtkToggleButton::inner-border={ 10, 0, 1, 0 }" );
-
-        } else {
-
-            _rc.addToCurrentSection( "  GtkToggleButton::inner-border={ 0, 10, 1, 0 }" );
-
-        }
-
-        _rc.matchWidgetClassToSection( "*PathBar.GtkToggleButton", "oxygen-pathbutton-internal" );
+        // apply extra programatically set metrics metrics
+        loadExtraOptions();
 
         // print generated Gtkrc and commit
         #if OXYGEN_DEBUG
@@ -444,12 +434,7 @@ namespace Oxygen
 
         // update icon search path
         // put existing default path in a set
-        PathSet searchPath;
-        gchar** gtkSearchPath;
-        int nElements;
-        gtk_icon_theme_get_search_path( gtk_icon_theme_get_default(), &gtkSearchPath, &nElements );
-        for( int i=0; i<nElements; i++ ) { searchPath.insert( gtkSearchPath[i] ); }
-        g_free( gtkSearchPath );
+        PathSet searchPath( defaultIconSearchPath() );
 
         // add kde's path. Loop is reversed because added path must be prepended.
         for( PathList::const_reverse_iterator iter = _kdeIconPathList.rbegin(); iter != _kdeIconPathList.rend(); ++iter )
@@ -464,12 +449,6 @@ namespace Oxygen
             if( searchPath.find( path ) == searchPath.end() )
             { gtk_icon_theme_prepend_search_path(gtk_icon_theme_get_default(), path.c_str() ); }
         }
-
-        #if OXYGEN_DEBUG
-        gtk_icon_theme_get_search_path( gtk_icon_theme_get_default(), &gtkSearchPath, &nElements );
-        for( int i=0; i<nElements; i++ )
-        { std::cerr << "Oxygen::QtSettings::loadKdeIcons - icon theme search path: " <<  gtkSearchPath[i] << std::endl; }
-        #endif
 
         // load icon theme and path to gtk
         _iconThemes.clear();
@@ -510,6 +489,29 @@ namespace Oxygen
 
         _rc.merge( _icons.generate( iconThemeList ) );
 
+    }
+
+    //_________________________________________________________
+    PathSet QtSettings::defaultIconSearchPath( void ) const
+    {
+        PathSet searchPath;
+
+        // load icon theme
+        GtkIconTheme* theme( gtk_icon_theme_get_default() );
+        if( !GTK_IS_ICON_THEME( theme ) ) return searchPath;
+
+        // get default
+        gchar** gtkSearchPath;
+        int nElements;
+
+        gtk_icon_theme_get_search_path( theme, &gtkSearchPath, &nElements );
+        for( int i=0; i<nElements; i++ )
+        { searchPath.insert( gtkSearchPath[i] ); }
+
+        // free
+        g_strfreev( gtkSearchPath );
+
+        return searchPath;
     }
 
     //_________________________________________________________
@@ -833,7 +835,11 @@ namespace Oxygen
 
         OptionMap oxygen;
         for( PathList::const_reverse_iterator iter = _kdeConfigPathList.rbegin(); iter != _kdeConfigPathList.rend(); ++iter )
-        { oxygen.merge( OptionMap( sanitizePath( *iter + "/oxygenrc" ) ) ); }
+        {
+            const std::string filename( sanitizePath( *iter + "/oxygenrc" ) );
+            oxygen.merge( filename );
+            monitorFile( filename );
+        }
 
         #if OXYGEN_DEBUG
         std::cerr << "Oxygen::QtSettings::loadOxygenOptions - Oxygenrc: " << std::endl;
@@ -918,6 +924,9 @@ namespace Oxygen
         _menuFollowMouseAnimationsDuration = oxygen.getOption( "[Style]", "MenuFollowMouseAnimationsDuration" ).toVariant<int>(40);
         _toolBarAnimationsDuration = oxygen.getOption( "[Style]", "ToolBarAnimationsDuration" ).toVariant<int>(50);
 
+        // animation steps
+        TimeLine::setSteps( oxygen.getOption( "[Style]", "AnimationSteps" ).toVariant<int>( 10 ) );
+
         // window decoration button size
         std::string buttonSize( oxygen.getValue( "[Windeco]", "ButtonSize", "Normal") );
         if( buttonSize == "Small" ) _buttonSize = ButtonSmall;
@@ -976,9 +985,83 @@ namespace Oxygen
         _rc.addToCurrentSection( Gtk::RCOption<bool>("  GtkScrollbar::has-secondary-forward-stepper", _scrollBarSubLineButtons > 1 ) );
 
         // mnemonics
-        const bool showMnemonics( oxygen.getOption( "[Style]", "ShowMnemonics" ).toVariant<std::string>("true") == "true" );
         GtkSettings* settings( gtk_settings_get_default() );
-        gtk_settings_set_long_property( settings, "gtk-enable-mnemonics", showMnemonics, "oxygen-gtk" );
+        if( oxygen.hasOption( "[Style]", "MnemonicsMode" ) )
+        {
+
+            const std::string mnemonicsMode( oxygen.getOption( "[Style]", "MnemonicsMode" ).toVariant<std::string>("MN_ALWAYS") );
+            if( mnemonicsMode == "MN_NEVER" )
+            {
+
+                gtk_settings_set_long_property( settings, "gtk-enable-mnemonics", false, "oxygen-gtk" );
+                gtk_settings_set_long_property( settings, "gtk-auto-mnemonics", false, "oxygen-gtk" );
+
+            } else if( mnemonicsMode == "MN_AUTO" ) {
+
+                gtk_settings_set_long_property( settings, "gtk-enable-mnemonics", true, "oxygen-gtk" );
+                gtk_settings_set_long_property( settings, "gtk-auto-mnemonics", true, "oxygen-gtk" );
+
+            } else {
+
+                gtk_settings_set_long_property( settings, "gtk-enable-mnemonics", true, "oxygen-gtk" );
+                gtk_settings_set_long_property( settings, "gtk-auto-mnemonics", false, "oxygen-gtk" );
+
+            }
+
+        } else {
+
+            // for backward compatibility
+            const bool showMnemonics( oxygen.getOption( "[Style]", "ShowMnemonics" ).toVariant<std::string>("true") == "true" );
+            if( showMnemonics )
+            {
+
+                gtk_settings_set_long_property( settings, "gtk-enable-mnemonics", true, "oxygen-gtk" );
+                gtk_settings_set_long_property( settings, "gtk-auto-mnemonics", false, "oxygen-gtk" );
+
+            } else {
+
+                gtk_settings_set_long_property( settings, "gtk-enable-mnemonics", false, "oxygen-gtk" );
+                gtk_settings_set_long_property( settings, "gtk-auto-mnemonics", false, "oxygen-gtk" );
+
+            }
+
+        }
+
+    }
+
+    //_________________________________________________________
+    void QtSettings::loadExtraOptions( void )
+    {
+
+        // deal with pathbar button margins
+        // this needs to be done programatically in order to properly account for RTL locales
+        _rc.addSection( "oxygen-pathbutton-internal", Gtk::RC::defaultSection() );
+        _rc.addToCurrentSection( "  GtkButton::inner-border = { 2, 2, 1, 0 }" );
+
+        if( gtk_widget_get_default_direction() == GTK_TEXT_DIR_RTL )
+        {
+
+            _rc.addToCurrentSection( "  GtkToggleButton::inner-border={ 10, 0, 1, 0 }" );
+
+        } else {
+
+            _rc.addToCurrentSection( "  GtkToggleButton::inner-border={ 0, 10, 1, 0 }" );
+
+        }
+
+        _rc.matchWidgetClassToSection( "*PathBar.GtkToggleButton", "oxygen-pathbutton-internal" );
+
+        // entry margins
+        _rc.addSection( "oxygen-entry-margins-internal", Gtk::RC::defaultSection() );
+        _rc.addToCurrentSection( Gtk::RCOption<int>( "  xthickness", 5 ) );
+        _rc.addToCurrentSection( Gtk::RCOption<int>( "  ythickness", applicationName().isXul() ? 2:1 ) );
+        _rc.matchClassToSection( "GtkEntry", "oxygen-entry-margins-internal" );
+
+        // combobox buttons
+        _rc.addSection( "oxygen-combobox-button-internal", Gtk::RC::defaultSection() );
+        _rc.addToCurrentSection( Gtk::RCOption<int>( "  xthickness", 2 ) );
+        _rc.addToCurrentSection( Gtk::RCOption<int>( "  ythickness", applicationName().isXul() ? 2:0 ) );
+        _rc.matchWidgetClassToSection( "*<GtkComboBox>.<GtkButton>", "oxygen-combobox-button-internal" );
 
     }
 
@@ -992,6 +1075,50 @@ namespace Oxygen
         { out.replace( position, 2, "/" ); }
 
         return out;
+    }
+
+    //_________________________________________________________
+    void QtSettings::monitorFile( const std::string& filename )
+    {
+
+        // check if file was already added
+        if( _monitoredFiles.find( filename ) != _monitoredFiles.end() )
+        { return; }
+
+        // check file existence
+        if( !std::ifstream( filename.c_str() ) )
+        { return; }
+
+        // create FileMonitor
+        FileMonitor monitor;
+        monitor.file = g_file_new_for_path( filename.c_str() );
+        if( ( monitor.monitor = g_file_monitor( monitor.file, G_FILE_MONITOR_NONE, 0L, 0L ) ) )
+        {
+
+            // insert in map
+            _monitoredFiles.insert( std::make_pair( filename, monitor ) );
+
+        } else {
+
+            // clear file and return
+            g_object_unref( monitor.file );
+            return;
+
+        }
+
+    }
+
+    //_________________________________________________________
+    void QtSettings::clearMonitoredFiles( void )
+    {
+        for( FileMap::iterator iter = _monitoredFiles.begin(); iter != _monitoredFiles.end(); iter++ )
+        {
+            iter->second.signal.disconnect();
+            g_object_unref( iter->second.file );
+            g_object_unref( iter->second.monitor );
+        }
+
+        _monitoredFiles.clear();
     }
 
 }

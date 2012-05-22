@@ -46,7 +46,7 @@ namespace Oxygen
 
         //! destructor
         virtual ~ToolBarStateData( void )
-        {}
+        { disconnect( _target ); }
 
         //! setup connections
         void connect( GtkWidget* );
@@ -241,7 +241,10 @@ namespace Oxygen
         //! additional dirty rect
         GdkRectangle _dirtyRect;
 
+        //! previous button animation data
         Data _previous;
+
+        //! current button animation data
         Data _current;
 
         //@}

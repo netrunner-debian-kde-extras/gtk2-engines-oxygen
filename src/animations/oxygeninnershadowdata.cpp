@@ -68,10 +68,10 @@ namespace Oxygen
     }
 
     //_____________________________________________
-    void InnerShadowData::disconnect( GtkWidget* widget )
+    void InnerShadowData::disconnect( GtkWidget* )
     {
         _target = 0;
-        for( ChildDataMap::iterator iter = _childrenData.begin(); iter != _childrenData.end(); ++iter )
+        for( ChildDataMap::reverse_iterator iter = _childrenData.rbegin(); iter != _childrenData.rend(); ++iter )
         { iter->second.disconnect( iter->first ); }
 
         // disconnect signals
@@ -85,44 +85,39 @@ namespace Oxygen
     void InnerShadowData::registerChild( GtkWidget* widget )
     {
 
-        #if GTK_CHECK_VERSION(2,22,0)
+        #if ENABLE_INNER_SHADOWS_HACK
 
         // make sure widget is not already in map
-        if( _childrenData.find( widget ) == _childrenData.end() )
+        if( _childrenData.find( widget ) != _childrenData.end() ) return;
+
+        #if OXYGEN_DEBUG
+        std::cerr
+            << "Oxygen::InnerShadowData::registerChild -"
+            << " " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")"
+            << std::endl;
+        #endif
+
+        GdkWindow* window(gtk_widget_get_window(widget));
+        if(
+
+            // check window
+            window &&
+            gdk_window_get_window_type( window ) == GDK_WINDOW_CHILD &&
+
+            // check compositing
+            gdk_display_supports_composite( gtk_widget_get_display( widget ) ) &&
+
+            // check widget type (might move to blacklist method)
+            ( G_OBJECT_TYPE_NAME(widget) != std::string("GtkPizza") ) &&
+
+            // make sure widget is scrollable
+            GTK_WIDGET_GET_CLASS( widget )->set_scroll_adjustments_signal )
         {
-
-            #if OXYGEN_DEBUG
-            std::cerr
-                << "Oxygen::InnerShadowData::registerChild -"
-                << " " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")"
-                << std::endl;
-            #endif
-
             ChildData data;
             data._unrealizeId.connect( G_OBJECT(widget), "unrealize", G_CALLBACK( childUnrealizeNotifyEvent ), this );
-
-            GdkWindow* window(gtk_widget_get_window(widget));
-            if(
-
-                // check window
-                window &&
-                gdk_window_get_window_type( window ) == GDK_WINDOW_CHILD &&
-
-                // check compositing
-                gdk_display_supports_composite( gtk_widget_get_display( widget ) ) &&
-
-                // check widget type (might move to blacklist method)
-                ( G_OBJECT_TYPE_NAME(widget) != std::string("GtkPizza") ) &&
-
-                // make sure widget is scrollable
-                GTK_WIDGET_GET_CLASS( widget )->set_scroll_adjustments_signal )
-            {
-                data.initiallyComposited=gdk_window_get_composited(window);
-                gdk_window_set_composited(window,TRUE);
-            }
-
+            data._initiallyComposited = gdk_window_get_composited(window);
+            gdk_window_set_composited(window,TRUE);
             _childrenData.insert( std::make_pair( widget, data ) );
-
         }
 
         #endif
@@ -132,6 +127,7 @@ namespace Oxygen
     //________________________________________________________________________________
     void InnerShadowData::unregisterChild( GtkWidget* widget )
     {
+        #if ENABLE_INNER_SHADOWS_HACK
 
         ChildDataMap::iterator iter( _childrenData.find( widget ) );
         if( iter == _childrenData.end() ) return;
@@ -146,26 +142,33 @@ namespace Oxygen
         iter->second.disconnect( widget );
         _childrenData.erase( iter );
 
+        #endif
     }
 
     //________________________________________________________________________________
     void InnerShadowData::ChildData::disconnect( GtkWidget* widget )
     {
-
-        #if OXYGEN_DEBUG
-        std::cerr
-            << "Oxygen::InnerShadowData::ChildData::disconnect -"
-            << " " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")"
-            << std::endl;
-        #endif
+        #if ENABLE_INNER_SHADOWS_HACK
 
         // disconnect signals
         _unrealizeId.disconnect();
 
         // remove compositing flag
         GdkWindow* window( gtk_widget_get_window( widget ) );
-        if( GTK_IS_WINDOW( window ) && G_OBJECT_TYPE_NAME( widget ) != std::string("GtkPizza") )
-        { gdk_window_set_composited(window,initiallyComposited); }
+
+        #if OXYGEN_DEBUG
+        std::cerr
+            << "Oxygen::InnerShadowData::ChildData::disconnect -"
+            << " widget: " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")"
+            << " window: " << window
+            << std::endl;
+        #endif
+
+        // restore compositing if different from initial state
+        if( GDK_IS_WINDOW( window ) && !gdk_window_is_destroyed(window) && gdk_window_get_composited( window ) != _initiallyComposited )
+        { gdk_window_set_composited( window, _initiallyComposited ); }
+
+        #endif
     }
 
     //____________________________________________________________________________________________
@@ -185,7 +188,7 @@ namespace Oxygen
     gboolean InnerShadowData::targetExposeEvent( GtkWidget* widget, GdkEventExpose* event, gpointer )
     {
 
-        #if GTK_CHECK_VERSION(2,24,0)
+        #if ENABLE_INNER_SHADOWS_HACK
         GtkWidget* child=gtk_bin_get_child(GTK_BIN(widget));
         GdkWindow* window=gtk_widget_get_window(child);
 
@@ -330,7 +333,7 @@ namespace Oxygen
             allocation.x-offsetX, allocation.y-offsetY, allocation.width+offsetX*2, allocation.height+offsetY*2,
             options, data );
 
-        #endif // Gtk version
+        #endif // enable inner shadows hack
 
         // let the event propagate
         return FALSE;

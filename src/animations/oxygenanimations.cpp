@@ -34,6 +34,9 @@ namespace Oxygen
         _innerShadowsEnabled( true ),
         _hooksInitialized( false )
     {
+        #if OXYGEN_DEBUG
+        std::cerr << "Oxygen::Animations::Animations" << std::endl;
+        #endif
 
         // create engines
         registerEngine( _backgroundHintEngine = new BackgroundHintEngine( this ) );
@@ -41,10 +44,12 @@ namespace Oxygen
         registerEngine( _comboBoxEngine = new ComboBoxEngine( this ) );
         registerEngine( _comboBoxEntryEngine = new ComboBoxEntryEngine( this ) );
         registerEngine( _dialogEngine = new DialogEngine( this ) );
+        registerEngine( _flatWidgetEngine = new FlatWidgetEngine( this ) );
         registerEngine( _groupBoxEngine = new GroupBoxEngine( this ) );
         registerEngine( _groupBoxLabelEngine = new GroupBoxLabelEngine( this ) );
         registerEngine( _hoverEngine = new HoverEngine( this ) );
         registerEngine( _mainWindowEngine = new MainWindowEngine( this ) );
+        registerEngine( _menuItemEngine = new MenuItemEngine( this ) );
         registerEngine( _panedEngine = new PanedEngine( this ) );
         registerEngine( _scrollBarEngine = new ScrollBarEngine( this ) );
         registerEngine( _scrolledWindowEngine = new ScrolledWindowEngine( this ) );
@@ -68,14 +73,22 @@ namespace Oxygen
     //____________________________________________________________________________________________
     Animations::~Animations( void )
     {
+        #if OXYGEN_DEBUG
+        std::cerr << "Oxygen::Animations::~Animations" << std::endl;
+        #endif
 
         // delete all engines
         for( BaseEngine::List::iterator iter = _engines.begin(); iter != _engines.end(); ++iter )
         { delete *iter; }
 
+        // disconnect all signals from map
+        for( WidgetMap::iterator iter = _allWidgets.begin(); iter != _allWidgets.end(); iter++ )
+        { iter->second.disconnect(); }
+
         // clear hooks
         _sizeAllocationHook.disconnect();
         _realizationHook.disconnect();
+        _innerShadowHook.disconnect();
 
     }
 
@@ -134,7 +147,8 @@ namespace Oxygen
 
         // https://bugzilla.gnome.org/show_bug.cgi?id=643416
         #if ENABLE_INNER_SHADOWS_HACK
-        _innerShadowHook.connect( "realize", (GSignalEmissionHook)innerShadowHook, this );
+        if(!getenv("OXYGEN_DISABLE_INNER_SHADOWS_HACK"))
+            _innerShadowHook.connect( "realize", (GSignalEmissionHook)innerShadowHook, this );
         #endif
 
         _sizeAllocationHook.connect( "size-allocate", (GSignalEmissionHook)sizeAllocationHook, this );
@@ -153,9 +167,9 @@ namespace Oxygen
         std::cerr << "Oxygen::Animations::registerWidget - " << widget << " (" << G_OBJECT_TYPE_NAME( widget ) << ")" << std::endl;
         #endif
 
-        WidgetData data;
-        data._destroyId.connect( G_OBJECT( widget ), "destroy", G_CALLBACK( destroyNotifyEvent ), this );
-        _allWidgets.insert( std::make_pair( widget, data ) );
+        Signal destroyId;
+        destroyId.connect( G_OBJECT( widget ), "destroy", G_CALLBACK( destroyNotifyEvent ), this );
+        _allWidgets.insert( std::make_pair( widget, destroyId ) );
         return true;
 
     }
@@ -173,7 +187,7 @@ namespace Oxygen
         assert( iter != _allWidgets.end() );
 
         // disconnect signal
-        iter->second._destroyId.disconnect();
+        iter->second.disconnect();
 
         // erase from map
         _allWidgets.erase( widget );

@@ -26,6 +26,8 @@
 #include "oxygenrgba.h"
 #include "oxygenshadowhelper.h"
 
+#include "config.h"
+
 #include <iostream>
 #include <cairo/cairo.h>
 #include <cairo/cairo-xlib.h>
@@ -40,11 +42,23 @@ namespace Oxygen
         _size(0),
         _atom(0),
         _hooksInitialized( false )
-    {}
+    {
+        #if OXYGEN_DEBUG
+        std::cerr << "Oxygen::ShadowHelper::ShadowHelper" << std::endl;
+        #endif
+    }
 
     //______________________________________________
     ShadowHelper::~ShadowHelper( void )
-    { reset(); }
+    {
+        #if OXYGEN_DEBUG
+        std::cerr << "Oxygen::ShadowHelper::~ShadowHelper" << std::endl;
+        #endif
+
+        reset();
+        _realizeHook.disconnect();
+
+    }
 
     //______________________________________________
     void ShadowHelper::reset( void )
@@ -261,7 +275,7 @@ namespace Oxygen
         if( _roundPixmaps.empty() )
         {
 
-           _roundPixmaps.push_back( createPixmap( _roundTiles.surface( 1 ), shadowOpacity ) );
+            _roundPixmaps.push_back( createPixmap( _roundTiles.surface( 1 ), shadowOpacity ) );
             _roundPixmaps.push_back( createPixmap( _roundTiles.surface( 2 ), shadowOpacity ) );
             _roundPixmaps.push_back( createPixmap( _roundTiles.surface( 5 ), shadowOpacity ) );
             _roundPixmaps.push_back( createPixmap( _roundTiles.surface( 8 ), shadowOpacity ) );
@@ -338,6 +352,9 @@ namespace Oxygen
             << std::endl;
         #endif
 
+        // check widget
+        if( !GTK_IS_WIDGET( widget ) ) return;
+
         // make sure handles and atom are defined
         createPixmapHandles();
 
@@ -394,7 +411,7 @@ namespace Oxygen
     void ShadowHelper::uninstallX11Shadows( GtkWidget* widget ) const
     {
 
-        if( !widget ) return;
+        if( !GTK_IS_WIDGET( widget ) ) return;
 
         GdkWindow  *window = gtk_widget_get_window( widget );
         GdkDisplay *display = gtk_widget_get_display( widget );
