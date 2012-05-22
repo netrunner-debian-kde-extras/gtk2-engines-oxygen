@@ -73,17 +73,12 @@ namespace Oxygen
 
         #if OXYGEN_DEBUG
         std::cerr << "DialogEngine::registerWidget - numOfResponsesFound: " << numOfResponsesFound << std::endl;
-        std::cerr << "List of responses found: { ";
-
-        for(int i=0; i<numOfResponsesFound; i++)
-        { std::cerr << Gtk::TypeNames::response( responses[i] ) << (i==numOfResponsesFound-1 ? " " :", "); }
-
-        std::cerr << "}; remaining in the list: { ";
-
-        for(int i=numOfResponsesFound; i<numOfResponseIDs; i++)
-        { std::cerr << Gtk::TypeNames::response( responses[i] ) << (i==numOfResponseIDs-1 ? " " :", "); }
-
-        std::cerr << "}\n";
+        for(int i=0; i<numOfResponseIDs; i++)
+        {
+            std::cerr << Gtk::TypeNames::response( responses[i] ) << ", ";
+            if(i==numOfResponsesFound-1) std::cerr<<"_END_of_found_,";
+        }
+        std::cerr << "\n\n";
         #endif
 
         // change order

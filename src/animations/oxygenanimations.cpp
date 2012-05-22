@@ -147,8 +147,7 @@ namespace Oxygen
 
         // https://bugzilla.gnome.org/show_bug.cgi?id=643416
         #if ENABLE_INNER_SHADOWS_HACK
-        if(!getenv("OXYGEN_DISABLE_INNER_SHADOWS_HACK"))
-            _innerShadowHook.connect( "realize", (GSignalEmissionHook)innerShadowHook, this );
+        _innerShadowHook.connect( "realize", (GSignalEmissionHook)innerShadowHook, this );
         #endif
 
         _sizeAllocationHook.connect( "size-allocate", (GSignalEmissionHook)sizeAllocationHook, this );

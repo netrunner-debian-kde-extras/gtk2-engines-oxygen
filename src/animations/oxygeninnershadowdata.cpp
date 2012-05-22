@@ -85,7 +85,7 @@ namespace Oxygen
     void InnerShadowData::registerChild( GtkWidget* widget )
     {
 
-        #if ENABLE_INNER_SHADOWS_HACK
+        #if GTK_CHECK_VERSION(2,22,0)
 
         // make sure widget is not already in map
         if( _childrenData.find( widget ) != _childrenData.end() ) return;
@@ -127,7 +127,6 @@ namespace Oxygen
     //________________________________________________________________________________
     void InnerShadowData::unregisterChild( GtkWidget* widget )
     {
-        #if ENABLE_INNER_SHADOWS_HACK
 
         ChildDataMap::iterator iter( _childrenData.find( widget ) );
         if( iter == _childrenData.end() ) return;
@@ -142,13 +141,11 @@ namespace Oxygen
         iter->second.disconnect( widget );
         _childrenData.erase( iter );
 
-        #endif
     }
 
     //________________________________________________________________________________
     void InnerShadowData::ChildData::disconnect( GtkWidget* widget )
     {
-        #if ENABLE_INNER_SHADOWS_HACK
 
         // disconnect signals
         _unrealizeId.disconnect();
@@ -167,8 +164,6 @@ namespace Oxygen
         // restore compositing if different from initial state
         if( GDK_IS_WINDOW( window ) && !gdk_window_is_destroyed(window) && gdk_window_get_composited( window ) != _initiallyComposited )
         { gdk_window_set_composited( window, _initiallyComposited ); }
-
-        #endif
     }
 
     //____________________________________________________________________________________________
@@ -188,7 +183,7 @@ namespace Oxygen
     gboolean InnerShadowData::targetExposeEvent( GtkWidget* widget, GdkEventExpose* event, gpointer )
     {
 
-        #if ENABLE_INNER_SHADOWS_HACK
+        #if GTK_CHECK_VERSION(2,24,0)
         GtkWidget* child=gtk_bin_get_child(GTK_BIN(widget));
         GdkWindow* window=gtk_widget_get_window(child);
 
@@ -333,7 +328,7 @@ namespace Oxygen
             allocation.x-offsetX, allocation.y-offsetY, allocation.width+offsetX*2, allocation.height+offsetY*2,
             options, data );
 
-        #endif // enable inner shadows hack
+        #endif // Gtk version
 
         // let the event propagate
         return FALSE;

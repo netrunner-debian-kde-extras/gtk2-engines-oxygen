@@ -51,9 +51,6 @@ namespace Oxygen
         virtual ~MenuItemEngine( void )
         {}
 
-        //! register all menuItems children of a menu
-        virtual bool registerMenu( GtkWidget* );
-
     };
 
 }

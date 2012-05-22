@@ -13,7 +13,7 @@ set( CPACK_PACKAGE_DESCRIPTION_SUMMARY "Oxygen Gtk2 theme" )
 set( CPACK_PACKAGE_VENDOR "hugo@oxygen-icons.org" )
 set( CPACK_PACKAGE_VERSION_MAJOR "1" )
 set( CPACK_PACKAGE_VERSION_MINOR "2" )
-set( CPACK_PACKAGE_VERSION_PATCH "4" )
+set( CPACK_PACKAGE_VERSION_PATCH "3" )
 set( CPACK_SOURCE_IGNORE_FILES "build" "^${PROJECT_SOURCE_DIR}.*/.git/" )
 
 ##################################
@@ -45,11 +45,6 @@ endif( NOT DEFINED OXYGEN_DEBUG )
 if( NOT DEFINED OXYGEN_DEBUG_INNERSHADOWS )
     set( OXYGEN_DEBUG_INNERSHADOWS 0 )
 endif( NOT DEFINED OXYGEN_DEBUG_INNERSHADOWS )
-
-# Set to 1 to build windeco test app (normal users rarely need this)
-if( NOT DEFINED BUILD_DECO_TEST )
-    set( BUILD_DECO_TEST 0 )
-endif( NOT DEFINED BUILD_DECO_TEST )
 
 # Set to 1 to replace gtk stock icons
 # with oxygen-icons
@@ -150,7 +145,6 @@ endif( ENABLE_INNER_SHADOWS_HACK AND GTK_VERSION VERSION_LESS 2.24.2 )
 #########
 message( "Flags: " )
 message( "  OXYGEN_DEBUG ${OXYGEN_DEBUG}" )
-message( "  BUILD_DECO_TEST ${BUILD_DECO_TEST}" )
 message( "  OXYGEN_DEBUG_INNERSHADOWS ${OXYGEN_DEBUG_INNERSHADOWS}" )
 message( "  OXYGEN_ICON_HACK ${OXYGEN_ICON_HACK}" )
 message( "  OXYGEN_FORCE_KDE_ICONS_AND_FONTS ${OXYGEN_FORCE_KDE_ICONS_AND_FONTS}" )
