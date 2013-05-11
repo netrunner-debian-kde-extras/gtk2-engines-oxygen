@@ -12,8 +12,8 @@ set( CPACK_SOURCE_GENERATOR TBZ2 )
 set( CPACK_PACKAGE_DESCRIPTION_SUMMARY "Oxygen Gtk2 theme" )
 set( CPACK_PACKAGE_VENDOR "hugo@oxygen-icons.org" )
 set( CPACK_PACKAGE_VERSION_MAJOR "1" )
-set( CPACK_PACKAGE_VERSION_MINOR "2" )
-set( CPACK_PACKAGE_VERSION_PATCH "4" )
+set( CPACK_PACKAGE_VERSION_MINOR "3" )
+set( CPACK_PACKAGE_VERSION_PATCH "3" )
 set( CPACK_SOURCE_IGNORE_FILES "build" "^${PROJECT_SOURCE_DIR}.*/.git/" )
 
 ##################################
@@ -40,6 +40,11 @@ include( CPack )
 if( NOT DEFINED OXYGEN_DEBUG )
     set( OXYGEN_DEBUG 0 )
 endif( NOT DEFINED OXYGEN_DEBUG )
+
+# Set to 1 to disable all signal hooks used for various features
+if( NOT DEFINED DISABLE_SIGNAL_HOOKS )
+    set( DISABLE_SIGNAL_HOOKS 0 )
+endif( NOT DEFINED DISABLE_SIGNAL_HOOKS )
 
 # Set to 1 to enable debug logs regarding inner shadows
 if( NOT DEFINED OXYGEN_DEBUG_INNERSHADOWS )
@@ -150,6 +155,7 @@ endif( ENABLE_INNER_SHADOWS_HACK AND GTK_VERSION VERSION_LESS 2.24.2 )
 #########
 message( "Flags: " )
 message( "  OXYGEN_DEBUG ${OXYGEN_DEBUG}" )
+message( "  DISABLE_SIGNAL_HOOKS ${DISABLE_SIGNAL_HOOKS}" )
 message( "  BUILD_DECO_TEST ${BUILD_DECO_TEST}" )
 message( "  OXYGEN_DEBUG_INNERSHADOWS ${OXYGEN_DEBUG_INNERSHADOWS}" )
 message( "  OXYGEN_ICON_HACK ${OXYGEN_ICON_HACK}" )
@@ -193,3 +199,4 @@ add_subdirectory( src )
 add_subdirectory( rc )
 add_subdirectory( special-icons )
 add_subdirectory( demo )
+

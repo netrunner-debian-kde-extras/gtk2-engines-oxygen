@@ -45,19 +45,25 @@ namespace Oxygen
     {
         if( !_instance )
         {
+            #if OXYGEN_DEBUG
+            std::cerr << "Oxygen::Style::instance - creating new style." << std::endl;
+            #endif
+
             _instance = new Style();
-            _instance->initialize();
         }
 
         return *_instance;
     }
 
     //__________________________________________________________________
-    void Style::initialize( unsigned int flags )
+    bool Style::initialize( unsigned int flags )
     {
 
         // initialize ref surface
         helper().initializeRefSurface();
+
+        // reinitialize settings
+        if( !_settings.initialize( flags ) ) return false;
 
         // reset caches if colors have changed
         if( flags&QtSettings::Colors )
@@ -65,9 +71,6 @@ namespace Oxygen
             helper().clearCaches();
             ColorUtils::clearCaches();
         }
-
-        // reinitialize settings
-        _settings.initialize( flags );
 
         // connect files
         QtSettings::FileMap& monitoredFiles( _settings.monitoredFiles() );
@@ -103,6 +106,8 @@ namespace Oxygen
         WindowShadow shadow( settings(), helper() );
         shadowHelper().setApplicationName( settings().applicationName() );
         shadowHelper().initialize( settings().palette().color(Palette::Window), shadow );
+
+        return true;
 
     }
 
@@ -231,11 +236,14 @@ namespace Oxygen
     bool Style::renderWindowBackground(
         cairo_t* context, GdkWindow* window, GtkWidget* widget,
         GdkRectangle* clipRect, gint x, gint y, gint w, gint h,
-        const StyleOptions& options, TileSet::Tiles tiles )
+        const StyleOptions& options, TileSet::Tiles tiles,
+        bool isMaximized )
     {
 
         // define colors
         ColorUtils::Rgba base( color( Palette::Window, options ) );
+
+        bool renderingWindeco(context && !window);
 
         // the hard-coded metrics are copied for
         // kdebase/workspace/libs/oxygen/oxygenhelper.cpp
@@ -248,9 +256,8 @@ namespace Oxygen
 
         // if we aren't going to draw window decorations...
         bool needToDestroyContext( false );
-        if( context && !window )
+        if( renderingWindeco )
         {
-
             // drawing window decorations, so logic is simplified
             ww=w;
             wh=h;
@@ -284,18 +291,42 @@ namespace Oxygen
 
                 #if OXYGEN_DEBUG
                 std::cerr << "Oxygen::Style::renderWindowBackground - map_to_toplevel failed" << std::endl;
+                std::cerr << "original xywh: ("<<x<<","<<y<<","<<w<<","<<h<<")\n";
                 #endif
 
-                // flat painting for all other apps
-                cairo_set_source(context,base);
-                cairo_rectangle(context,x,y,w,h);
-                cairo_fill(context);
-                if( needToDestroyContext ) cairo_destroy(context);
-                else cairo_restore(context);
-                return false;
+                if(Style::instance().settings().applicationName().isOpenOffice() && GTK_IS_WINDOW(widget))
+                {
+                    gtk_window_get_size(GTK_WINDOW(widget),&ww,&wh);
+                    wx=0;
+                    wy=0;
+                    cairo_translate(context,x,y);
+                    if(clipRect)
+                    {
+                        #if OXYGEN_DEBUG
+                        std::cerr << "original clipRect: " << *clipRect << std::endl;
+                        #endif
+                        clipRect->x-=x;
+                        clipRect->y-=y;
+                        clipRect->width-=x;
+                        clipRect->height-=y;
+                    }
+                    x=y=0;
+                    #if OXYGEN_DEBUG
+                    std::cerr <<"Oxygen::Style::renderWindowBackground - setting openoffice-specific coords:"<<wx<<","<<wy<<","<<ww<<","<<wh<<"\n\n";
+                    #endif
+                }
+                else
+                {
+                    // flat painting for all other apps
+                    cairo_set_source(context,base);
+                    cairo_rectangle(context,x,y,w,h);
+                    cairo_fill(context);
+                    if( needToDestroyContext ) cairo_destroy(context);
+                    else cairo_restore(context);
+                    return false;
+                }
 
             }
-
             // translate to toplevel coordinates
             wy += yShift;
             x+=wx;
@@ -376,13 +407,23 @@ namespace Oxygen
 
         if( hasBackgroundSurface() )
         {
+            // Additional clip constraint so that no extra space is filled (important for LibreOffice)
+            cairo_rectangle(context,x,y,w,h);
+            cairo_clip(context);
 
-            // no sense in context saving since it will be destroyed
+            if(renderingWindeco)
+            {
+                // Take border sizes into account
+                int bgShiftX=isMaximized?0:WinDeco::getMetric(WinDeco::BorderLeft);
+                int bgShiftY=WinDeco::getMetric(WinDeco::BorderTop)-yShift;
+                cairo_translate(context,bgShiftX,bgShiftY);
+            }
+
+            // no sense in context saving since it will be either destroyed or restored to earlier state
             cairo_translate( context, -40, -(48-20) );
             cairo_set_source_surface( context, _backgroundSurface, 0, 0 );
             cairo_rectangle( context, 0, 0, ww + wx + 40, wh + wy + 48 - 20 );
             cairo_fill( context );
-
         }
 
         if(needToDestroyContext) cairo_destroy(context);
@@ -464,10 +505,10 @@ namespace Oxygen
     }
 
     //__________________________________________________________________
-    bool Style::renderMenuBackground( GdkWindow* window, GdkRectangle* clipRect, gint x, gint y, gint w, gint h, const StyleOptions& options ) const
+    bool Style::renderMenuBackground( GdkWindow* window, Cairo::Context& context, gint x, gint y, gint w, gint h, const StyleOptions& options ) const
     {
         // define colors
-        ColorUtils::Rgba base(settings().palette().color( Palette::Window ) );
+        ColorUtils::Rgba base( color( Palette::Window, options ) );
         ColorUtils::Rgba top( ColorUtils::backgroundTopColor( base ) );
         ColorUtils::Rgba bottom( ColorUtils::backgroundBottomColor( base ) );
 
@@ -481,8 +522,6 @@ namespace Oxygen
         x+=wx;
         y+=wy;
 
-        // create context and translate
-        Cairo::Context context( window, clipRect );
         cairo_translate( context, -wx, -wy );
         const bool hasAlpha( options&Alpha );
         const bool isMenu( options&Menu );
@@ -516,7 +555,7 @@ namespace Oxygen
 
         }
 
-        GdkRectangle lowerRect = { 0, splitY, w, wh-splitY - verticalOffset };
+        GdkRectangle lowerRect = { 0, splitY, ww, wh-splitY - verticalOffset };
         if( gdk_rectangle_intersect( &rect, &lowerRect, &lowerRect ) )
         {
 
@@ -685,26 +724,26 @@ namespace Oxygen
                 {
                     // first vertical line
                     cairo_move_to( context, xCenter + 0.5 , y );
-                    cairo_line_to( context, xCenter + 0.5, yCenter - int(cellFlags._expanderSize/3 ) );
+                    cairo_line_to( context, xCenter + 0.5, yCenter - int(cellFlags._expanderSize/3 )-1 );
 
                     // second vertical line
                     if( !isLastCell )
                     {
 
                         cairo_move_to( context, xCenter + 0.5, y+h );
-                        cairo_line_to( context, xCenter + 0.5, yCenter + int( cellFlags._expanderSize/3 ) );
+                        cairo_line_to( context, xCenter + 0.5, yCenter + int( cellFlags._expanderSize/3 )+2 );
                     }
 
                     // horizontal line
                     if( reversed )
                     {
 
-                        cairo_move_to( context, xCenter + 1 - int( cellFlags._expanderSize/3 ), yCenter + 0.5 );
+                        cairo_move_to( context, xCenter - 1 - int( cellFlags._expanderSize/3 ), yCenter + 0.5 );
                         cairo_line_to( context, xCenter + 1  - cellFlags._expanderSize*2/3, yCenter + 0.5 );
 
                     } else {
 
-                        cairo_move_to( context, xCenter + int( cellFlags._expanderSize/3 ), yCenter + 0.5 );
+                        cairo_move_to( context, xCenter + 2 + int( cellFlags._expanderSize/3 ), yCenter + 0.5 );
                         cairo_line_to( context, xCenter + cellFlags._expanderSize*2/3, yCenter + 0.5 );
 
                     }
@@ -933,7 +972,7 @@ namespace Oxygen
         // make sure that width is large enough
         const int indicatorSize( (options&Vertical ? h:w ) );
 
-        if( indicatorSize >= 4 && w > 0 && h > 1 )
+        if( indicatorSize >= 3 && w > 0 && h > 1 )
         {
             // get surface
             const Cairo::Surface& surface( helper().progressBarIndicator( base, glow, w, h-1 ) );
@@ -1357,7 +1396,7 @@ namespace Oxygen
         }
 
         cairo_set_source( context, pattern );
-        helper().fillSlab( context, x, y, w, h, tiles );
+        helper().fillSlab( context, x, y, w, h+1, tiles );
         cairo_restore( context );
 
         if( options&Sunken )
@@ -1412,28 +1451,19 @@ namespace Oxygen
         const ColorUtils::Rgba& glow )
     {
 
-        // define colors
-        gint wh, wy;
-        Gtk::gdk_map_to_toplevel( window, 0L, &wy, 0L, &wh );
-        const ColorUtils::Rgba base( ColorUtils::backgroundColor( settings().palette().color( Palette::Button ), wh, y+wy+h/2 ) );
-
         // create context
         Cairo::Context context( window, clipRect );
 
-        // fill
-        {
-            Cairo::Pattern pattern;
-            const ColorUtils::Rgba shadow( ColorUtils::shadowColor( base ) );
-            pattern.set( cairo_pattern_create_linear( 0, y-h, 0, y+h ) );
-            cairo_pattern_add_color_stop( pattern, 0, ColorUtils::lightColor( base ) );
-            cairo_pattern_add_color_stop( pattern, 1.0, base );
+        // content
+        cairo_rounded_rectangle( context, x+1, y+1, w-2, h-2, 5 );
+        cairo_set_source( context, glow );
+        cairo_fill( context );
 
-            cairo_set_source( context, pattern );
-            helper().fillSlab( context, x, y, w, h );
-        }
-
-        // slab
-        helper().slab( base, glow, 0 ).render( context, x, y, w, h );
+        // border
+        cairo_set_line_width( context, 1.0 );
+        cairo_rounded_rectangle( context, 1.5+x, 1.5+y, w-3, h-3, 4.5 );
+        cairo_set_source( context, ColorUtils::darken( glow ) );
+        cairo_stroke( context );
 
     }
 
@@ -1505,7 +1535,9 @@ namespace Oxygen
             ColorUtils::Rgba base( ColorUtils::decoColor( background, color ) );
             ColorUtils::Rgba contrast( ColorUtils::lightColor( background ) );
 
-            if( options&Active )
+            // We don't want to change color on active state for menu checkboxes (it's never passed by GTK)
+            // Also, if we ignore active state, we get correct render for LibreOffice
+            if( options&Active && !(options&Flat) )
             {
                 base = ColorUtils::alphaColor( base, 0.3 );
                 contrast = ColorUtils::alphaColor( contrast, 0.3 );
@@ -1671,7 +1703,9 @@ namespace Oxygen
             ColorUtils::Rgba base( ColorUtils::decoColor( background, color ) );
             ColorUtils::Rgba contrast( ColorUtils::lightColor( background ) );
 
-            if( options&Active )
+            // We don't want to change color on active state for menu radiobuttons (it's never passed by GTK)
+            // Also, if we ignore active state, we get correct render for LibreOffice
+            if( options&Active && !(options&Menu ) )
             {
                 base = ColorUtils::alphaColor( base, 0.3 );
                 contrast = ColorUtils::alphaColor( contrast, 0.3 );
@@ -2397,8 +2431,9 @@ namespace Oxygen
             cairo_rounded_rectangle(context,x,y,w,h,3.5);
             cairo_clip(context);
         }
+
         if( gradient )
-            renderWindowBackground( context, 0L, 0L, 0L, x, y, w, h );
+            renderWindowBackground( context, x, y, w, h, isMaximized );
         else
         {
             cairo_set_source( context, settings().palette().color( Palette::Active, Palette::Window ) );
@@ -2413,7 +2448,7 @@ namespace Oxygen
         if(wopt & WinDeco::Active) options|=Focus;
 
         if( !isMaximized )
-        { drawFloatFrame( context, 0L, 0L, x, y, w, h, options, Palette::InactiveWindowBackground ); }
+        { drawFloatFrame( context, 0L, 0L, x, y, w, h, options ); }
 
         if( drawResizeHandle )
         {
@@ -2451,6 +2486,10 @@ namespace Oxygen
 
         // enable gradient if XID is not passed
         bool gradient=true;
+
+        const int buttonSpacing(WinDeco::getMetric(WinDeco::ButtonSpacing));
+        titleIndentLeft+=2*buttonSpacing;
+        titleIndentRight+=2*buttonSpacing;
 
         QtSettings::WindecoBlendType blendType(settings().windecoBlendType());
         if( blendType==QtSettings::SolidColor )
@@ -3822,8 +3861,8 @@ namespace Oxygen
         #endif
 
         Style& style( *static_cast<Style*>( data ) );
-        style.initialize( QtSettings::All|QtSettings::Forced );
-        gtk_rc_reset_styles( gtk_settings_get_default() );
+        if( style.initialize( QtSettings::All|QtSettings::Forced ) )
+        { gtk_rc_reset_styles( gtk_settings_get_default() ); }
 
     }
 

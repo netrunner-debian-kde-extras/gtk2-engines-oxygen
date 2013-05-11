@@ -24,6 +24,7 @@
 #include "../oxygengtkutils.h"
 #include "../config.h"
 #include "../oxygencairocontext.h"
+#include "../oxygencairoutils.h"
 #include "oxygenanimations.h"
 #include "../oxygenstyle.h"
 #include "../oxygenmetrics.h"
@@ -195,7 +196,7 @@ namespace Oxygen
         #if OXYGEN_DEBUG
         std::cerr << "Oxygen::InnerShadowData::targetExposeEvent -"
             << " widget: " << widget << " (" << G_OBJECT_TYPE_NAME(widget) << ")"
-            << " child: " << child << " (" << G_OBJECT_TYPE_NAME(widget) << ")"
+            << " child: " << child << " (" << G_OBJECT_TYPE_NAME(child) << ")"
             << " path: " << Gtk::gtk_widget_path( child )
             << " area: " << event->area
             << std::endl;
@@ -236,6 +237,40 @@ namespace Oxygen
         cairo_set_source_rgba(context,red,green,blue,0.5);
         cairo_fill(context);
         #endif
+
+        // Render rounded combobox list child
+        if(Gtk::gtk_combobox_is_tree_view( child ))
+        {
+            StyleOptions options(widget,gtk_widget_get_state(widget));
+            Corners corners(CornersAll);
+            if(gtk_widget_get_visible(gtk_scrolled_window_get_vscrollbar(GTK_SCROLLED_WINDOW(widget))))
+            {
+                if(Gtk::gtk_widget_layout_is_reversed( widget ))
+                    corners &= ~CornersLeft;
+                else
+                    corners &= ~CornersRight;
+            }
+            if(gtk_widget_get_visible(gtk_scrolled_window_get_hscrollbar(GTK_SCROLLED_WINDOW(widget))))
+                corners &= ~CornersBottom;
+
+            int x(allocation.x),y(allocation.y),w(allocation.width),h(allocation.height);
+            cairo_rectangle(context,x,y,w,h);
+            if(!Gtk::gdk_default_screen_is_composited())
+            {
+                // Take ugly shadow into account
+                x+=1;
+                y+=1;
+                w-=2;
+                h-=2;
+            }
+            cairo_rounded_rectangle_negative(context,x,y,w,h,2,corners);
+            cairo_clip(context);
+
+            Style::instance().renderMenuBackground( gtk_widget_get_window(widget), context, allocation.x,allocation.y,allocation.width,allocation.height, options );
+
+            // Event handling finished, now let the event propagate
+            return FALSE;
+        }
 
         // draw the shadow
         /*
