@@ -62,7 +62,7 @@ namespace Oxygen
         }
 
         //! initialize
-        void initialize( unsigned int flags = QtSettings::All );
+        bool initialize( unsigned int flags = QtSettings::All );
 
         //! settings
         const QtSettings& settings( void ) const
@@ -128,7 +128,9 @@ namespace Oxygen
 
         //! window background
         /*! returns true if window gradient could be rendered */
-        bool renderWindowBackground( cairo_t*, GdkWindow*, GtkWidget*, GdkRectangle*, gint, gint, gint, gint, const StyleOptions& = StyleOptions(), TileSet::Tiles = TileSet::Center );
+        bool renderWindowBackground( cairo_t*, GdkWindow*, GtkWidget*, GdkRectangle*, gint, gint, gint, gint, const StyleOptions& = StyleOptions(), TileSet::Tiles = TileSet::Center, bool isMaximized=false );
+        bool renderWindowBackground( cairo_t* c, gint x, gint y, gint w, gint h, bool maximized )
+        { return renderWindowBackground( c, 0, 0, 0, x, y, w, h, StyleOptions(), TileSet::Center, maximized );}
 
         bool renderWindowBackground( GdkWindow* window, GtkWidget* widget, GdkRectangle* r, gint x, gint y, gint w, gint h, const StyleOptions& o = StyleOptions(), TileSet::Tiles tiles= TileSet::Center )
         { return renderWindowBackground( 0L, window, widget, r, x, y, w, h, o, tiles ); }
@@ -143,7 +145,9 @@ namespace Oxygen
         bool renderGroupBoxBackground( cairo_t*, GdkWindow*, GtkWidget*, GdkRectangle*, gint, gint, gint, gint, const StyleOptions&, TileSet::Tiles = TileSet::Center );
 
         //! menu background
-        bool renderMenuBackground( GdkWindow*, GdkRectangle*, gint, gint, gint, gint, const StyleOptions& ) const;
+        bool renderMenuBackground( GdkWindow*, Cairo::Context&, gint, gint, gint, gint, const StyleOptions& ) const;
+        bool renderMenuBackground( GdkWindow* window, GdkRectangle* r, gint x, gint y, gint w, gint h, const StyleOptions& o) const
+        { Cairo::Context c(window,r); return renderMenuBackground(window, c, x, y, w, h, o); }
 
         //! tooltip background
         void renderTooltipBackground( GdkWindow*, GdkRectangle*, gint, gint, gint, gint, const StyleOptions& ) const;

@@ -57,9 +57,6 @@ namespace Oxygen
         virtual ~QtSettings( void )
         { clearMonitoredFiles(); }
 
-        //! load kdeglobals settings into optionMap
-        void loadKdeGlobals( void );
-
         //! initialization flags
         enum Flags
         {
@@ -69,7 +66,8 @@ namespace Oxygen
             KdeGlobals = 1<<3,
             Oxygen = 1<<4,
             Colors = 1<<5,
-            All = AppName|Icons|Fonts|KdeGlobals|Oxygen|Colors,
+            Extra = 1<<7,
+            All = AppName|Icons|Fonts|KdeGlobals|Oxygen|Colors|Extra,
             Forced = 1<<6
         };
 
@@ -78,7 +76,7 @@ namespace Oxygen
         { return _userConfigDir; }
 
         //! initialize
-        void initialize( unsigned int flags = All );
+        bool initialize( unsigned int flags = All );
 
         //! palette
         const Palette& palette( void ) const
@@ -166,6 +164,10 @@ namespace Oxygen
         //! tree triangular expander size
         ArrowSize viewTriangularExpanderSize( void ) const
         { return _viewTriangularExpanderSize; }
+
+        //! true if views sort order indicator arrow direction must be inverted
+        bool viewInvertSortIndicator( void ) const
+        { return _viewInvertSortIndicator; }
 
         //! menu highlight mode
         enum MenuHighlightMode
@@ -346,10 +348,18 @@ namespace Oxygen
 
         protected:
 
-        //! icon path
+        //! kdeglobals settings
+        /*! returns true if changed */
+        bool loadKdeGlobals( void );
+
+        //! oxygen settings
+        /*! returns true if changed */
+        bool loadOxygen( void );
+
+        //! kde configuration path
         PathList kdeConfigPathList( void ) const;
 
-        //! icon path
+        //! kde icon path
         PathList kdeIconPathList( void ) const;
 
         //! add icon theme to path list, accounting for theme inheritance (recursively)
@@ -407,6 +417,9 @@ namespace Oxygen
 
         //! kde global options
         OptionMap _kdeGlobals;
+
+        //! oxygen options
+        OptionMap _oxygen;
 
         //! user config directory
         std::string _userConfigDir;
@@ -485,6 +498,9 @@ namespace Oxygen
 
         //! triangular expander size
         ArrowSize _viewTriangularExpanderSize;
+
+        //! true if views sort order indicator arrow direction must be inverted
+        bool _viewInvertSortIndicator;
 
         //! menu highlight mode
         MenuHighlightMode _menuHighlightMode;

@@ -64,6 +64,9 @@ namespace Oxygen
         initSurface( _surfaces, surface, w, _h3, _w1, _h1+h2, w2, _h3 );
         initSurface( _surfaces, surface, _w3, _h3, _w1+w2, _h1+h2, _w3, _h3 );
 
+        if(!isValid())
+            std::cerr << "oxygen-gtk: BUG: created tileset looks invalid, expect resource leaks ("<<__FILE__<<":"<<__LINE__<<")\n";
+
     }
 
     //______________________________________________________________
@@ -181,7 +184,8 @@ namespace Oxygen
 
             } else {
 
-                #if CAIRO_VERSION >= CAIRO_VERSION_ENCODE(1, 10, 0)
+                // Bug 316066
+                #if CAIRO_VERSION >= CAIRO_VERSION_ENCODE(1, 12, 4)
                 Cairo::Surface tile( cairo_surface_create_for_rectangle( source, sx, sy, sw, sh ) );
                 #else
                 Cairo::Surface tile( cairo_surface_create_similar( source, CAIRO_CONTENT_COLOR_ALPHA, sw, sh ) );

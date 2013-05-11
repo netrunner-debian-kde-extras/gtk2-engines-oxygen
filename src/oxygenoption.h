@@ -40,8 +40,6 @@ namespace Oxygen
     {
         public:
 
-        typedef std::set<Option> Set;
-
         //! constructor
         explicit Option( const std::string& tag = std::string(), const std::string& value = std::string() ):
             _tag(tag),
@@ -83,6 +81,19 @@ namespace Oxygen
         { return toVariant<int>( defaultValue ); }
 
         template< typename T>  T toVariant( T = T() ) const;
+
+        class Set: public std::set<Option>
+        {
+            public:
+
+            //! equal to operator
+            /*!
+            it differs from the stl version, based on Option equal to operator
+            in that it is more strict. This is needed to actually track option
+            changes prior to reloading */
+            inline bool operator == (const Set&  ) const;
+
+        };
 
         #if OXYGEN_DEBUG
         protected:
@@ -132,6 +143,20 @@ namespace Oxygen
         T out;
         std::istringstream stream( _value );
         return ( stream >> out ) ? out:defaultValue;
+    }
+
+    //_______________________________________________________________________
+    bool Option::Set::operator == (const Option::Set& other ) const
+    {
+        const_iterator firstIter = begin();
+        const_iterator secondIter = other.begin();
+        for(;firstIter != end() && secondIter != other.end(); ++firstIter, ++secondIter )
+        {
+            if( firstIter->_tag != secondIter->_tag || firstIter->_value != secondIter->_value )
+            { return false; }
+        }
+
+        return firstIter == end() && secondIter == other.end();
     }
 
 }
