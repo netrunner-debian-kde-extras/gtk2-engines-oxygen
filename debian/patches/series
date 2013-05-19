@@ -1,1 +1,2 @@
 dont-build-demos.patch
+popen-instead-of-g_spawn_command_line_sync.patch
