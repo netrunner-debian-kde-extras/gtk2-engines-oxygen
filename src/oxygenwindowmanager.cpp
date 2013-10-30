@@ -30,23 +30,29 @@
 #include "oxygenstyle.h"
 #include "config.h"
 
-#include <gdk/gdkx.h>
-
 namespace Oxygen
 {
 
 
     //_________________________________________________
     WindowManager::WindowManager( void ):
-        _mode( Full ),
+        _useWMMoveResize( true ),
+        _cursorLoaded( false ),
+        _cursor( 0L ),
+        _oldCursor( 0L ),
+        _dragMode( Full ),
         _hooksInitialized( false ),
-        _drag( false ),
+        _dragAboutToStart( false ),
+        _dragInProgress( false ),
         _dragDistance( 4 ),
         _dragDelay( 500 ),
         _widget( 0L ),
         _lastRejectedEvent( 0L ),
         _x(-1),
-        _y(-1)
+        _y(-1),
+        _globalX(-1),
+        _globalY(-1),
+        _time(0)
     {
         #if OXYGEN_DEBUG
         std::cerr << "Oxygen::WindowManager::WindowManager" << std::endl;
@@ -69,6 +75,10 @@ namespace Oxygen
         _buttonReleaseHook.disconnect();
         _map.disconnectAll();
         _map.clear();
+
+        // cursor
+        if( _cursor ) gdk_cursor_unref( _cursor );
+
     }
 
     //_________________________________________________
@@ -76,7 +86,7 @@ namespace Oxygen
     {
 
         if( _hooksInitialized ) return;
-        if(_mode!=Disabled)
+        if( _dragMode!=Disabled )
         {
             _styleSetHook.connect( "style-set", (GSignalEmissionHook)styleSetHook, this );
             _buttonReleaseHook.connect( "button-release-event", (GSignalEmissionHook)buttonReleaseHook, this );
@@ -88,6 +98,15 @@ namespace Oxygen
     //_________________________________________________
     bool WindowManager::registerWidget( GtkWidget* widget )
     {
+
+        // load cursor if needed
+        if( !_cursorLoaded )
+        {
+            assert( !_cursor );
+            GdkDisplay *display( gtk_widget_get_display( widget ) );
+            _cursor = gdk_cursor_new_from_name( display, "all-scroll" );
+            _cursorLoaded = true;
+        }
 
         if( _map.contains( widget ) ) return false;
 
@@ -124,9 +143,9 @@ namespace Oxygen
         in which case we should not use them for grabbing
         */
         if(
-            std::string( G_OBJECT_TYPE_NAME( widget ) ) == "GtkWindow" &&
-            (gtk_widget_get_events ( widget ) &
-            (GDK_BUTTON_PRESS_MASK|GDK_BUTTON_RELEASE_MASK) ) )
+            ( GTK_IS_WINDOW( widget ) || GTK_IS_VIEWPORT( widget ) ) &&
+            ( gtk_widget_get_events ( widget ) &
+            ( GDK_BUTTON_PRESS_MASK|GDK_BUTTON_RELEASE_MASK ) ) )
         {
             registerBlackListWidget( widget );
             return false;
@@ -155,7 +174,7 @@ namespace Oxygen
         Data& data( _map.registerWidget( widget ) );
 
         // connect signals
-        if( _mode != Disabled ) connect( widget, data );
+        if( _dragMode != Disabled ) connect( widget, data );
         return true;
 
     }
@@ -172,13 +191,8 @@ namespace Oxygen
         _map.value( widget ).disconnect( widget );
         _map.erase( widget );
 
-        if( _widget == widget )
-        {
-            _widget = 0L;
-            _x = -1;
-            _y = -1;
-            _drag = false;
-        }
+        // reset drag is the current drag target
+        if( _widget == widget ) resetDrag();
 
     }
 
@@ -218,13 +232,13 @@ namespace Oxygen
     }
 
     //_________________________________________________
-    void WindowManager::setMode( WindowManager::Mode mode )
+    void WindowManager::setDragMode( WindowManager::Mode mode )
     {
-        if( mode == _mode ) return;
+        if( mode == _dragMode ) return;
 
         // connect/disconnect all data in map, based on new and old mode
         if( mode == Disabled ) { _map.disconnectAll(); }
-        else if( _mode == Disabled )
+        else if( _dragMode == Disabled )
         {
             DataMap<Data>::Map& map( _map.map() );
             for( DataMap<Data>::Map::iterator iter = map.begin(); iter != map.end(); ++iter )
@@ -232,7 +246,7 @@ namespace Oxygen
         }
 
         // assign new mode
-        _mode = mode;
+        _dragMode = mode;
 
     }
 
@@ -257,7 +271,7 @@ namespace Oxygen
         if( event->type == GDK_BUTTON_PRESS && event->button == Gtk::LeftButton )
         {
 
-            const bool accepted( static_cast<WindowManager*>(data)->isWindowDragWidget( widget, event ) );
+            const bool accepted( static_cast<WindowManager*>(data)->canDrag( widget, event ) );
             #if OXYGEN_DEBUG
             std::cerr << "Oxygen::WindowManager::wmButtonPress -"
                 << " event: " << event
@@ -276,7 +290,10 @@ namespace Oxygen
 
     //_________________________________________________
     gboolean WindowManager::wmLeave(GtkWidget*, GdkEventCrossing*, gpointer data )
-    { return (gboolean) static_cast<WindowManager*>( data )->finishDrag(); }
+    {
+        WindowManager& manager( *static_cast<WindowManager*>( data ) );
+        return (gboolean) ( manager.useWMMoveResize() && manager.resetDrag() );
+    }
 
     //_________________________________________________
     gboolean WindowManager::wmMotion( GtkWidget *widget, GdkEventMotion* event, gpointer data )
@@ -354,10 +371,10 @@ namespace Oxygen
         WindowManager &manager( *static_cast<WindowManager*>(data ) );
 
         // check mode
-        if( manager._mode == Disabled ) return TRUE;
+        if( manager._dragMode == Disabled ) return TRUE;
 
         // check if drag is in progress, and reset if yes
-        if( manager._drag )
+        if( manager._dragAboutToStart || manager._dragInProgress )
         {
 
             #if OXYGEN_DEBUG
@@ -367,7 +384,12 @@ namespace Oxygen
                 << " " << gtk_widget_get_name( widget )
                 << std::endl;
             #endif
-            manager.finishDrag();
+
+            // reset cursor
+            if( !manager._useWMMoveResize && manager._dragInProgress )
+            { manager.unsetCursor( widget ); }
+
+            manager.resetDrag();
 
         }
 
@@ -379,73 +401,102 @@ namespace Oxygen
     {
 
         // make sure drag is enabled
-        if( !_drag ) return false;
+        if( !_dragAboutToStart ) return false;
 
-        // check displacement with respect to drag start
-        const int distance( abs( _x - int(event->x_root) ) + abs( _y - int(event->y_root) ) );
+        // check displacement with respect to drag start, as long as not already started
+        if( !_dragInProgress )
+        {
+            const int distance( abs( _globalX - int(event->x_root) ) + abs( _globalY - int(event->y_root) ) );
 
-        if( distance > 0 && _timer.isRunning() ) _timer.stop();
-        if( distance < _dragDistance ) return false;
+            if( distance > 0 && _timer.isRunning() ) _timer.stop();
+            if( distance < _dragDistance ) return false;
+
+        }
 
         // start drag from current position
-        return startDrag( widget, int(event->x_root), int(event->y_root) );
+        if( _useWMMoveResize )
+        {
+
+            return startDrag( widget, int(event->x_root), int(event->y_root), event->time );
+
+        } else {
+
+            if( !_dragInProgress )
+            {
+                setCursor( widget );
+                _dragInProgress = true;
+            }
+
+            GtkWindow* topLevel = GTK_WINDOW( gtk_widget_get_toplevel( widget ) );
+            int wx, wy;
+            gtk_window_get_position( topLevel, &wx, &wy );
+            gtk_window_move( topLevel, wx + event->x - _x, wy + event->y - _y );
+            return true;
+
+        }
 
     }
 
     //_________________________________________________________________
-    bool WindowManager::startDrag( GtkWidget* widget, int x, int y )
+    bool WindowManager::startDrag( GtkWidget* widget, int x, int y, guint32 time )
     {
+
         // create xevent and send.
-        XEvent     xev;
-        GtkWindow  *topLevel = GTK_WINDOW( gtk_widget_get_toplevel( widget ) );
-        GdkWindow  *window = gtk_widget_get_window( GTK_WIDGET( topLevel ) );
-        GdkDisplay *display = gtk_widget_get_display( GTK_WIDGET( topLevel ) );
-        GdkWindow  *root = gdk_screen_get_root_window( gtk_window_get_screen( topLevel ) );
+        if( _useWMMoveResize )
+        {
 
-        xev.xclient.type = ClientMessage;
-        xev.xclient.message_type = gdk_x11_get_xatom_by_name_for_display(display, "_NET_WM_MOVERESIZE");
-        xev.xclient.display = GDK_DISPLAY_XDISPLAY(display);
-        xev.xclient.window = GDK_WINDOW_XID(window);
-        xev.xclient.format = 32;
-        xev.xclient.data.l[0] = x;
-        xev.xclient.data.l[1] = y;
-        xev.xclient.data.l[2] = 8; // NET::Move
-        xev.xclient.data.l[3] = Button1;
-        xev.xclient.data.l[4] = 0;
-        XUngrabPointer(GDK_DISPLAY_XDISPLAY(display), CurrentTime);
+            _dragInProgress = true;
+            GtkWindow* topLevel = GTK_WINDOW( gtk_widget_get_toplevel( widget ) );
+            gtk_window_begin_move_drag( topLevel, Gtk::LeftButton, x, y, time );
+            resetDrag();
 
-        XSendEvent(
-            GDK_DISPLAY_XDISPLAY(display),
-            GDK_WINDOW_XID(root),
-            False,
-            SubstructureRedirectMask | SubstructureNotifyMask,
-            &xev);
+        } else if( !_dragInProgress ) {
 
-        // force a release as some widgets miss it...
-        finishDrag();
+            _dragInProgress = true;
+            setCursor( widget );
 
-        // wmButtonRelease( widget, 0L, this );
+        }
 
         return true;
+
+    }
+
+    //_________________________________________________________________
+    void WindowManager::setCursor( GtkWidget* widget )
+    {
+
+        GdkWindow* window( gtk_widget_get_window( gtk_widget_get_toplevel( widget ) ) );
+        _oldCursor = gdk_window_get_cursor( window );
+        gdk_window_set_cursor( window, _cursor );
+    }
+
+    //_________________________________________________________________
+    void WindowManager::unsetCursor( GtkWidget* widget )
+    {
+        GdkWindow* window( gtk_widget_get_window( gtk_widget_get_toplevel( widget ) ) );
+        gdk_window_set_cursor( window, _oldCursor );
     }
 
     //_________________________________________________
-    bool WindowManager::finishDrag( void )
+    bool WindowManager::resetDrag( void )
     {
 
         _widget = 0L;
         _lastRejectedEvent = 0L;
         _x = -1;
         _y = -1;
+        _globalX = -1;
+        _globalY = -1;
+        _time = 0;
 
         // stop timer
         if( _timer.isRunning() ) _timer.stop();
 
-        if( _drag )
+        if( _dragAboutToStart || _dragInProgress )
         {
 
-            gdk_pointer_ungrab( CurrentTime );
-            _drag = false;
+            _dragAboutToStart = false;
+            _dragInProgress = false;
             return true;
 
         } else return false;
@@ -453,24 +504,27 @@ namespace Oxygen
     }
 
     //_________________________________________________
-    bool WindowManager::isWindowDragWidget( GtkWidget* widget, GdkEventButton* event )
+    bool WindowManager::canDrag( GtkWidget* widget, GdkEventButton* event )
     {
 
-        if( _mode == Disabled ) return false;
-        else if( (!_drag) && withinWidget(widget, event ) && useEvent( widget, event ) )
+        if( _dragMode == Disabled ) return false;
+        else if( !_dragAboutToStart && withinWidget(widget, event ) && useEvent( widget, event ) )
         {
 
             // store widget and event position
             _widget = widget;
-            _x = int(event->x_root);
-            _y = int(event->y_root);
+            _x = int(event->x);
+            _y = int(event->y);
+            _globalX = int(event->x_root);
+            _globalY = int(event->y_root);
+            _time = event->time;
 
             // start timer
             if( _timer.isRunning() ) _timer.stop();
             _timer.start( _dragDelay, (GSourceFunc)startDelayedDrag, this );
 
             // enable drag and accept
-            _drag = true;
+            _dragAboutToStart = true;
             return true;
 
         } else {
@@ -538,8 +592,8 @@ namespace Oxygen
     {
 
         // check against mode
-        if( _mode == Disabled ) return false;
-        if( _mode == Minimal && !( GTK_IS_TOOLBAR( widget ) || GTK_IS_MENU_BAR( widget ) ) ) return false;
+        if( _dragMode == Disabled ) return false;
+        if( _dragMode == Minimal && !( GTK_IS_TOOLBAR( widget ) || GTK_IS_MENU_BAR( widget ) ) ) return false;
         if( _lastRejectedEvent && event == _lastRejectedEvent ) return false;
 
         // always accept if widget is not a container

@@ -12,8 +12,8 @@ set( CPACK_SOURCE_GENERATOR TBZ2 )
 set( CPACK_PACKAGE_DESCRIPTION_SUMMARY "Oxygen Gtk2 theme" )
 set( CPACK_PACKAGE_VENDOR "hugo@oxygen-icons.org" )
 set( CPACK_PACKAGE_VERSION_MAJOR "1" )
-set( CPACK_PACKAGE_VERSION_MINOR "3" )
-set( CPACK_PACKAGE_VERSION_PATCH "3" )
+set( CPACK_PACKAGE_VERSION_MINOR "4" )
+set( CPACK_PACKAGE_VERSION_PATCH "0" )
 set( CPACK_SOURCE_IGNORE_FILES "build" "^${PROJECT_SOURCE_DIR}.*/.git/" )
 
 ##################################
@@ -111,9 +111,11 @@ find_package(PkgConfig REQUIRED )
 
 # GTK
 pkg_check_modules( GTK REQUIRED gtk+-2.0 )
+add_definitions( ${GTK_CFLAGS_OTHER} )
 
 # Cairo
 pkg_check_modules( CAIRO REQUIRED cairo )
+add_definitions( ${CAIRO_CFLAGS_OTHER} )
 
 ##########################
 # installation directories

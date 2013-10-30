@@ -27,10 +27,11 @@
 #include "oxygengtkutils.h"
 #include "config.h"
 
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <sstream>
-#include <cstdlib>
+#include <unistd.h>
 
 namespace Oxygen
 {
@@ -74,6 +75,7 @@ namespace Oxygen
         else if( gtkAppName == "soffice" ) _name = OpenOffice;
         else if( gtkAppName == "gimp" ) _name = Gimp;
         else if(
+            gtkAppName == "chrome" ||
             gtkAppName == "chromium" ||
             gtkAppName == "chromium-browser" ||
             gtkAppName == "google-chrome" ) _name = GoogleChrome;
@@ -104,11 +106,15 @@ namespace Oxygen
             }
         }
 
+        // For now, only LibreOffice passes its version, so for other apps version will remain NULL
+        _version=getenv("LIBO_VERSION");
+
         #if OXYGEN_DEBUG
         std::cerr << "ApplicationName::initialize -"
             << " from pid: " << pidAppName
             << " from gtk: " << gtkAppName
             << " internal: " << *this
+            << " version: " << (_version?_version:"0x0")
             << std::endl;
         #endif
 

@@ -57,6 +57,14 @@ namespace Oxygen
         //! initialize hooks
         void initializeHooks( void );
 
+        //! returns true if window manager is used for moving
+        bool useWMMoveResize( void ) const
+        { return _useWMMoveResize; }
+
+        //! use window manager for moving, when available
+        void setUseWMMoveResize( bool value )
+        { _useWMMoveResize = value; }
+
         //! window grab mode
         enum Mode
         {
@@ -66,7 +74,7 @@ namespace Oxygen
         };
 
         //! window grab mode
-        void setMode( Mode mode );
+        void setDragMode( Mode mode );
 
         //! drag distance
         void setDragDistance( int value )
@@ -124,17 +132,23 @@ namespace Oxygen
         bool startDrag( GtkWidget*, GdkEventMotion* );
 
         //! start dragging widget
-        bool startDrag( GtkWidget*, int, int );
+        bool startDrag( GtkWidget*, int, int, guint32 );
 
         //! start dragging widget
         void startDrag( void )
-        { if( _drag && _widget ) startDrag( _widget, _x, _y ); }
+        { if( _dragAboutToStart && _widget ) startDrag( _widget, _globalX, _globalY, _time ); }
+
+        //! set cursor
+        void setCursor( GtkWidget* );
+
+        //! unset cursor
+        void unsetCursor( GtkWidget* );
 
         //! finish dragging widget
-        bool finishDrag( void );
+        bool resetDrag( void );
 
         //! return true if window is dragable
-        bool isWindowDragWidget( GtkWidget*, GdkEventButton* );
+        bool canDrag( GtkWidget*, GdkEventButton* );
 
         //! return true if event happen in widget
         bool withinWidget( GtkWidget*, GdkEventButton* ) const;
@@ -214,8 +228,16 @@ namespace Oxygen
 
         private:
 
+        //! use WM moveResize
+        bool _useWMMoveResize;
+
+        //! cursor
+        bool _cursorLoaded;
+        GdkCursor* _cursor;
+        GdkCursor* _oldCursor;
+
         //! drag mode
-        Mode _mode;
+        Mode _dragMode;
 
         //! true when hooks are initialized
         bool _hooksInitialized;
@@ -229,8 +251,11 @@ namespace Oxygen
         //! timer
         Timer _timer;
 
-        //! true if in drag mode
-        bool _drag;
+        //! true if in drag can start
+        bool _dragAboutToStart;
+
+        //! true if dragging
+        bool _dragInProgress;
 
         //! drag distance
         int _dragDistance;
@@ -249,13 +274,19 @@ namespace Oxygen
         int _x;
         int _y;
 
+        //! drag position
+        int _globalX;
+        int _globalY;
+
+        //! drag time
+        guint32 _time;
+
         //! widget typenames black-list
         std::vector<std::string> _blackList;
 
         //! widget black-list
         typedef std::map< GtkWidget*, Signal > WidgetMap;
         WidgetMap _blackListWidgets;
-
 
         //! map widgets to data structure
         DataMap<Data> _map;
