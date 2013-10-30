@@ -1,3 +1,13 @@
+gtk2-engines-oxygen (1.4.0-1) UNRELEASED; urgency=low
+
+  * Team upload.
+  * New upstream release.
+  * Refresh dont-build-demos.patch.
+  * Drop popen-instead-of-g_spawn_command_line_sync.patch, no
+    longer needed.
+
+ -- Ralf Jung <post@ralfj.de>  Wed, 30 Oct 2013 08:58:18 +0100
+
 gtk2-engines-oxygen (1.3.3-2) unstable; urgency=low
 
   * Team upload.
