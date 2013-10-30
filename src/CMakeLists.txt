@@ -35,6 +35,7 @@ set( oxygen_gtk_SOURCES
     animations/oxygentreeviewdata.cpp
     animations/oxygentreeviewengine.cpp
     animations/oxygentreeviewstatedata.cpp
+    animations/oxygenwidgetsizedata.cpp
     animations/oxygenwidgetstatedata.cpp
     animations/oxygenwidgetstateengine.cpp
     oxygenapplicationname.cpp
@@ -52,6 +53,7 @@ set( oxygen_gtk_SOURCES
     oxygenloghandler.cpp
     oxygenobjectcounter.cpp
     oxygenobjectcountermap.cpp
+    oxygenoption.cpp
     oxygenoptionmap.cpp
     oxygenpalette.cpp
     oxygenpathlist.cpp

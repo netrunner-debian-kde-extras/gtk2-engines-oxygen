@@ -404,7 +404,15 @@ namespace Oxygen
     }
 
     //________________________________________________________
-    bool Gtk::gtk_combobox_is_viewport( GtkWidget* widget )
+    bool Gtk::gtk_combobox_is_popup( GtkWidget* widget )
+    {
+        // check types and path
+        if( !GTK_IS_WINDOW(widget) ) return false;
+        return Gtk::gtk_widget_path( widget ) == "gtk-combobox-popup-window";
+    }
+
+    //________________________________________________________
+    bool Gtk::gtk_combo_is_viewport( GtkWidget* widget )
     {
         if( !GTK_IS_VIEWPORT(widget) ) return false;
         static const std::string match( "gtk-combo-popup-window" );
@@ -412,11 +420,19 @@ namespace Oxygen
     }
 
     //________________________________________________________
-    bool Gtk::gtk_combobox_is_frame( GtkWidget* widget )
+    bool Gtk::gtk_combo_is_frame( GtkWidget* widget )
     {
         if( !GTK_IS_FRAME(widget) ) return false;
         static const std::string match( "gtk-combo-popup-window" );
         return Gtk::gtk_widget_path( widget ).substr( 0, match.size() ) == match;
+    }
+
+    //________________________________________________________
+    bool Gtk::gtk_combo_is_popup( GtkWidget* widget )
+    {
+        if( !GTK_IS_WINDOW(widget) ) return false;
+        static const std::string match( "gtk-combo-popup-window" );
+        return Gtk::gtk_widget_path( widget ) == match;
     }
 
     //________________________________________________________
@@ -425,6 +441,14 @@ namespace Oxygen
         gboolean appearsAsList;
         gtk_widget_style_get( widget, "appears-as-list", &appearsAsList, NULL );
         return (bool) appearsAsList;
+    }
+
+    //________________________________________________________
+    bool Gtk::gtk_is_tooltip( GtkWidget* widget )
+    {
+        if( GTK_IS_TOOLTIP(widget) ) return true;
+        const std::string path(Gtk::gtk_widget_path( widget ));
+        return  path == "gtk-tooltip" || path == "gtk-tooltips";
     }
 
     //________________________________________________________

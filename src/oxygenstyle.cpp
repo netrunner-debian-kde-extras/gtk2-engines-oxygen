@@ -34,7 +34,9 @@
 #include <algorithm>
 #include <cmath>
 
+#ifdef GDK_WINDOWING_X11
 #include <X11/Xatom.h>
+#endif
 
 namespace Oxygen
 {
@@ -53,6 +55,14 @@ namespace Oxygen
         }
 
         return *_instance;
+    }
+
+    //__________________________________________________________________
+    Style::Style( void )
+    {
+        #ifdef GDK_WINDOWING_X11
+        _blurAtom = None;
+        #endif
     }
 
     //__________________________________________________________________
@@ -86,9 +96,12 @@ namespace Oxygen
         if( flags&QtSettings::Oxygen )
         {
             // pass window drag mode to window manager
-            if( !settings().windowDragEnabled() ) windowManager().setMode( WindowManager::Disabled );
-            else if( settings().windowDragMode() == QtSettings::WD_MINIMAL ) windowManager().setMode( WindowManager::Minimal );
-            else windowManager().setMode( WindowManager::Full );
+            if( !settings().windowDragEnabled() ) windowManager().setDragMode( WindowManager::Disabled );
+            else if( settings().windowDragMode() == QtSettings::WD_MINIMAL ) windowManager().setDragMode( WindowManager::Minimal );
+            else windowManager().setDragMode( WindowManager::Full );
+
+            // use window manager to handle window drag
+            windowManager().setUseWMMoveResize( settings().useWMMoveResize() );
 
         }
 
@@ -106,6 +119,18 @@ namespace Oxygen
         WindowShadow shadow( settings(), helper() );
         shadowHelper().setApplicationName( settings().applicationName() );
         shadowHelper().initialize( settings().palette().color(Palette::Window), shadow );
+
+        #ifdef GDK_WINDOWING_X11
+        if( _blurAtom == None )
+        {
+
+            GdkDisplay *display( gdk_display_get_default() );
+            if( display )
+            { _blurAtom = XInternAtom(GDK_DISPLAY_XDISPLAY( display ),"_KDE_NET_WM_BLUR_BEHIND_REGION",False); }
+
+        }
+
+        #endif
 
         return true;
 
@@ -242,7 +267,6 @@ namespace Oxygen
 
         // define colors
         ColorUtils::Rgba base( color( Palette::Window, options ) );
-
         bool renderingWindeco(context && !window);
 
         // the hard-coded metrics are copied for
@@ -337,6 +361,12 @@ namespace Oxygen
 
         }
 
+        if(options&DrawAlphaChannel)
+        {
+            base.setAlpha(settings().backgroundOpacity()/255.);
+            cairo_set_operator(context,CAIRO_OPERATOR_SOURCE);
+        }
+
         // split
         const int splitY( std::min(300, 3*wh/4 ) );
 
@@ -381,6 +411,10 @@ namespace Oxygen
             cairo_fill( context );
 
         }
+
+        // gradient should be rendered with full opacity
+        base.setAlpha(1);
+        cairo_set_operator(context,CAIRO_OPERATOR_OVER);
 
         // radial pattern
         const int patternHeight = 64;
@@ -536,6 +570,13 @@ namespace Oxygen
             cairo_set_operator( context, CAIRO_OPERATOR_SOURCE );
             cairo_set_source( context, ColorUtils::alphaColor( base, 0 ) );
             cairo_fill( context );
+
+            if(settings().backgroundOpacity()<255)
+            {
+                double opacity(settings().backgroundOpacity()/255.);
+                top.setAlpha(opacity);
+                bottom.setAlpha(opacity);
+            }
         }
 
         const int splitY( std::min(200, 3*wh/4 ) );
@@ -977,7 +1018,7 @@ namespace Oxygen
             // get surface
             const Cairo::Surface& surface( helper().progressBarIndicator( base, glow, w, h-1 ) );
             cairo_translate( context, x, y );
-            cairo_rectangle( context, 0, 0, cairo_surface_get_width( surface ), cairo_surface_get_height( surface ) );
+            cairo_rectangle( context, 0, 0, w, h-1 );
             cairo_set_source_surface( context, surface, 0, 0 );
             cairo_fill( context );
         }
@@ -1073,8 +1114,7 @@ namespace Oxygen
         else if( options&Hover ) glow = hovered;
         else glow = shadow;
 
-        helper().scrollHandle( color, glow ).
-            render( context, xf-3, yf-3, wf+6, hf+6, TileSet::Full );
+        helper().scrollHandle( color, glow ).render( context, xf-3, yf-3, wf+6, hf+6, TileSet::Full );
 
         // contents
         const ColorUtils::Rgba mid( ColorUtils::midColor( color ) );
@@ -2424,23 +2464,26 @@ namespace Oxygen
         bool hasAlpha( wopt & WinDeco::Alpha );
         bool drawResizeHandle( !(wopt & WinDeco::Shaded) && (wopt & WinDeco::Resizable) );
         bool isMaximized( wopt & WinDeco::Maximized );
+        bool drawAlphaChannel( wopt & WinDeco::DrawAlphaChannel );
+        StyleOptions options( hasAlpha ? Alpha : Blend );
 
-        if( hasAlpha )
+        if( hasAlpha && !isMaximized )
         {
             // cut round corners using alpha
             cairo_rounded_rectangle(context,x,y,w,h,3.5);
             cairo_clip(context);
         }
 
+        if(drawAlphaChannel)
+            options|=DrawAlphaChannel;
+
         if( gradient )
-            renderWindowBackground( context, x, y, w, h, isMaximized );
+            renderWindowBackground( context, x, y, w, h, isMaximized, options );
         else
         {
             cairo_set_source( context, settings().palette().color( Palette::Active, Palette::Window ) );
             cairo_paint( context );
         }
-
-        StyleOptions options( hasAlpha ? Alpha : Blend );
 
         options|=Round;
 
@@ -2469,6 +2512,8 @@ namespace Oxygen
     //__________________________________________________________________
     void Style::drawWindowDecoration( cairo_t* context, WinDeco::Options wopt, gint x, gint y, gint w, gint h, const gchar** windowStrings, gint titleIndentLeft, gint titleIndentRight )
     {
+
+        #ifdef GDK_WINDOWING_X11
         /*
            (any element of windowStrings[] may be NULL - will be understood as "")
            windowStrings may also be NULL
@@ -2501,19 +2546,18 @@ namespace Oxygen
 
             Window window((Window)windowStrings[2]);
             Display* display( GDK_DISPLAY_XDISPLAY(gdk_display_get_default()) );
-            Atom _backgroundGradientAtom = XInternAtom( display, "_KDE_OXYGEN_BACKGROUND_GRADIENT", False);
-            if(_backgroundGradientAtom)
+            if( _animations.backgroundHintEngine().backgroundGradientAtom() != None )
             {
-                Atom type_ret;
-                int format_ret;
-                unsigned long items_ret;
-                unsigned long after_ret;
-                unsigned char *prop_data = 0;
+                Atom typeRet;
+                int formatRet;
+                unsigned long itemsRet;
+                unsigned long afterRet;
+                unsigned char *data = 0;
 
-                if( !(XGetWindowProperty(display, window, _backgroundGradientAtom, 0, G_MAXLONG, False,
-                        XA_CARDINAL, &type_ret, &format_ret, &items_ret, &after_ret, &prop_data) == Success
-                            && items_ret == 1
-                            && format_ret == 32) )
+                if( !( XGetWindowProperty(display, window, _animations.backgroundHintEngine().backgroundGradientAtom(), 0, G_MAXLONG, False,
+                    XA_CARDINAL, &typeRet, &formatRet, &itemsRet, &afterRet, &data) == Success
+                    && itemsRet == 1
+                    && formatRet == 32) )
                 {
                     // if the window doesn't have this property set, it's likely
                     // non-oxygenized, thus shouldn't have windeco bg gradient
@@ -2656,8 +2700,15 @@ namespace Oxygen
 
                         cairo_save( context );
 
-                        cairo_set_source( context, settings().palette().color( group, Palette::WindowText ) );
-                        cairo_translate( context, x+titleIndentLeft, y+(H-textHeight)/2. );
+                        ColorUtils::Rgba titleContrastColor(ColorUtils::lightColor(settings().palette().color( Palette::Disabled, Palette::Window )));
+                        cairo_set_source( context, titleContrastColor );
+                        cairo_translate( context, x+titleIndentLeft, y+(H-textHeight)/2.+1 );
+                        pango_cairo_update_layout( context, layout );
+                        pango_cairo_show_layout( context, layout );
+
+                        ColorUtils::Rgba titleTextColor(settings().palette().color( group, Palette::WindowText ));
+                        cairo_set_source( context, titleTextColor );
+                        cairo_translate( context, 0, -1 );
                         pango_cairo_update_layout( context, layout );
                         pango_cairo_show_layout( context, layout );
 
@@ -2706,6 +2757,9 @@ namespace Oxygen
                 cairo_fill(context);
             }
         }
+
+        #endif
+
     }
 
     //__________________________________________________________________
@@ -2815,7 +2869,6 @@ namespace Oxygen
         // get color
         const ColorUtils::Rgba base( settings().palette().color( Palette::Window ) );
         const ColorUtils::Rgba light( ColorUtils::lightColor( base ) );
-        const ColorUtils::Rgba dark( ColorUtils::darkColor( base ) );
 
         // create context
         Cairo::Context context( window, clipRect );
@@ -3159,8 +3212,6 @@ namespace Oxygen
 
         // get color
         const ColorUtils::Rgba base( settings().palette().color( Palette::Window ) );
-        const ColorUtils::Rgba light( ColorUtils::lightColor( base ) );
-        const ColorUtils::Rgba dark( ColorUtils::darkColor( base ) );
 
         // create context
         Cairo::Context context( window, clipRect );
@@ -3863,6 +3914,81 @@ namespace Oxygen
         Style& style( *static_cast<Style*>( data ) );
         if( style.initialize( QtSettings::All|QtSettings::Forced ) )
         { gtk_rc_reset_styles( gtk_settings_get_default() ); }
+
+    }
+
+    //_______________________________________________________________________
+    void Style::renderTabCloseIcon(cairo_t* context, GdkRectangle* r) const
+    {
+        cairo_save(context);
+        cairo_translate(context,r->x,r->y);
+
+        cairo_move_to( context, 5.5, 5.5 ); cairo_line_to( context, 10.5, 10.5 );
+        cairo_move_to( context, 10.5, 5.5 ); cairo_line_to( context, 5.5, 10.5 );
+        cairo_stroke( context );
+
+        cairo_restore(context);
+    }
+
+    //_______________________________________________________________________________
+    void Style::renderTabCloseButton(cairo_t* context, GdkRectangle* r, const ColorUtils::Rgba& base, const ColorUtils::Rgba& color)
+    {
+        cairo_save(context);
+
+        cairo_set_source_surface(context,helper().dockWidgetButton(base,true,r->width),0,0);
+        cairo_rectangle(context,r->x,r->y,r->width,r->height);
+        cairo_fill(context);
+
+        const double width(1.1);
+
+        // contrast
+        cairo_translate(context,0,0.5);
+        cairo_set_line_cap( context, CAIRO_LINE_CAP_ROUND );
+        cairo_set_line_join( context, CAIRO_LINE_JOIN_ROUND );
+        cairo_set_line_width(context,width);
+        cairo_set_source(context,ColorUtils::lightColor( base ));
+
+        renderTabCloseIcon(context,r);
+
+        // main icon painting
+        cairo_translate(context,0,-1);
+        cairo_set_source(context,color);
+
+        renderTabCloseIcon(context,r);
+
+        cairo_restore(context);
+    }
+
+    //_________________________________________________________
+    void Style::setWindowBlur(GdkWindow* window,bool enable)
+    {
+
+        #ifdef GDK_WINDOWING_X11
+
+        // Make whole window blurred
+        // FIXME: should roundedness be taken into account?
+        #if GTK_CHECK_VERSION(2,24,0)
+        int w = gdk_window_get_width(window);
+        int h = gdk_window_get_height(window);
+        GdkDisplay* gdkDisplay=gdk_window_get_display(window);
+        #else
+        int w,h;
+        gdk_drawable_get_size(window,&w,&h);
+        GdkDisplay* gdkDisplay=gdk_drawable_get_display(window);
+        #endif
+
+        const guint32 rects[4]={0,0, (guint32)w, (guint32)h};
+        const XID id( GDK_WINDOW_XID( window ) );
+        Display* display( GDK_DISPLAY_XDISPLAY( gdkDisplay ) );
+
+        if(enable)
+        {
+
+            XChangeProperty( display, id, _blurAtom, XA_CARDINAL, 32, PropModeReplace, reinterpret_cast<const unsigned char*>(rects), 4 );
+
+        } else XDeleteProperty( display, id, _blurAtom );
+
+        #endif
 
     }
 

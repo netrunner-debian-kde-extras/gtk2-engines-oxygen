@@ -138,6 +138,14 @@ namespace Oxygen
                 return;
             }
 
+            // for opera, render flat background, always
+            // (using renderwindowbackground will at best fall back to flat, at worse, render garbage)
+            if( Style::instance().settings().applicationName().isOpera() )
+            {
+                Style::instance().fill( window, clipRect, x, y, w, h, Palette::Window );
+                return;
+            }
+
             // do nothing for mozilla, acrobat, gnome applets, and other hint-specific windows
             if(
                 Style::instance().settings().applicationName().useFlatBackground( widget ) ||
@@ -275,28 +283,7 @@ namespace Oxygen
             if( GDK_IS_WINDOW( window ) )
             {
                 Style::instance().animations().widgetSizeEngine().registerWidget( widget );
-                const bool wasAlpha( Style::instance().animations().widgetSizeEngine().wasAlpha( widget ) );
-                if( !(options&Alpha) )
-                {
-                    // make tooltips appear rounded using XShape extension if screen isn't composited
-                    const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( widget ) );
-                    const bool sizeChanged( Style::instance().animations().widgetSizeEngine().updateSize( widget, allocation.width, allocation.height ) );
-                    if( ( sizeChanged || wasAlpha ) && ( gtk_widget_is_toplevel(widget) || GTK_IS_WINDOW(widget) ) )
-                    {
-                        GdkPixmap* mask( Style::instance().helper().roundMask( allocation.width, allocation.height ) );
-                        gdk_window_shape_combine_mask( window, mask, x, y );
-                        gdk_pixmap_unref( mask );
-                    }
-
-                    Style::instance().animations().widgetSizeEngine().setAlpha(widget, false);
-                }
-                else if( !wasAlpha )
-                {
-                    // reset mask if compositing has appeared
-                    gdk_window_shape_combine_mask( window, NULL, 0, 0 );
-
-                    Style::instance().animations().widgetSizeEngine().setAlpha(widget, true);
-                }
+                Style::instance().animations().widgetSizeEngine().updateXShape(widget);
             }
 
             Style::instance().renderTooltipBackground( window, clipRect, x, y, w, h, options );
@@ -488,10 +475,22 @@ namespace Oxygen
                     Style::instance().settings().applicationName().isGoogleChrome() );
             if(Style::instance().settings().applicationName().isOpenOffice())
             {
-                x+=2;
-                w-=4;
-                y+=1;
-                h-=2;
+                const char* ver=Style::instance().settings().applicationName().versionString();
+                // If ver appears non-NULL, we have at least LibO 4.0.
+                // For now, it's enough to differentiate old version from new.
+                // If something gets broken in newer version, we'll have to parse ver.
+                if(ver)
+                {
+                    x-=3;
+                    w+=6;
+                }
+                else
+                {
+                    x+=2;
+                    w-=4;
+                    y+=1;
+                    h-=2;
+                }
             }
 
             StyleOptions options( widget, state, shadow );
@@ -1020,10 +1019,11 @@ namespace Oxygen
                     { gtk_widget_hide(image); }
 
                     // center the button image
-                    const int height( cairo_surface_get_height( surface ) );
-                    const int width( cairo_surface_get_width( surface ) );
-                    x=x+(w-width)/2;
-                    y=y+(h-height)/2;
+                    int width(0);
+                    int height(0);
+                    cairo_surface_get_size( surface, width, height );
+                    x += (w-width)/2;
+                    y += (h-height)/2;
 
                     // render the image
                     Cairo::Context context( window, clipRect );
@@ -1255,33 +1255,10 @@ namespace Oxygen
                 // add mask if needed
                 if( GTK_IS_MENU(widget) )
                 {
-
                     Style::instance().animations().menuItemEngine().registerMenu( widget );
 
                     Style::instance().animations().widgetSizeEngine().registerWidget( widget );
-                    const bool wasAlpha(Style::instance().animations().widgetSizeEngine().wasAlpha(widget));
-                    if( !(options&Alpha) )
-                    {
-
-                        // make menus appear rounded using XShape extension if screen isn't composited
-                        const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( widget ) );
-                        const bool sizeChanged(Style::instance().animations().widgetSizeEngine().updateSize( widget, allocation.width, allocation.height ));
-                        if( sizeChanged || wasAlpha )
-                        {
-                            GdkPixmap* mask( Style::instance().helper().roundMask( w, h - 2*Oxygen::Menu_VerticalOffset ) );
-                            gdk_window_shape_combine_mask( gtk_widget_get_parent_window(widget), mask, 0, Oxygen::Menu_VerticalOffset );
-                            gdk_pixmap_unref(mask);
-                        }
-
-                        Style::instance().animations().widgetSizeEngine().setAlpha(widget, false);
-
-                    } else if( !wasAlpha )
-                    {
-                        // reset mask if compositing has appeared after we had set a mask
-                        gdk_window_shape_combine_mask( gtk_widget_get_parent_window(widget), NULL, 0, 0);
-
-                        Style::instance().animations().widgetSizeEngine().setAlpha(widget, true);
-                    }
+                    Style::instance().animations().widgetSizeEngine().updateXShape( widget );
                 }
 
                 // if render
@@ -1715,41 +1692,17 @@ namespace Oxygen
             // setup options
             StyleOptions options( Round );
             if( Gtk::gtk_widget_has_rgba(parent) ) options|=Alpha;
-
-            // store parent allocation
-            GtkAllocation allocation( Gtk::gtk_widget_get_allocation( parent ) );
+            const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( parent ) );
 
             // always register to widget size engine
             Style::instance().animations().widgetSizeEngine().registerWidget( parent );
-            const bool sizeChanged( Style::instance().animations().widgetSizeEngine().updateSize( parent, allocation.width, allocation.height ) );
-            const bool wasAlpha(Style::instance().animations().widgetSizeEngine().wasAlpha(parent));
-
-            if( sizeChanged || (!(options&Alpha) && wasAlpha) || (!wasAlpha && (options&Alpha)) )
+            const bool sizeChanged( Style::instance().animations().widgetSizeEngine().updateXShape(parent) );
+            if( sizeChanged )
             {
-
-                // update window shape
-                if( !(options&Alpha) )
-                {
-                    // the same as with menus and tooltips (but changed a bit to take scrollbars into account)
-                    // make background window rounded
-                    GdkPixmap* mask( Style::instance().helper().roundMask( allocation.width, allocation.height ) );
-                    gdk_window_shape_combine_mask( gtk_widget_get_window( parent ), mask, 0, 0 );
-                    gdk_pixmap_unref( mask );
-
-                    Style::instance().animations().widgetSizeEngine().setAlpha(parent, false);
-                }
-                else if( !wasAlpha )
-                {
-                    // reset XShape mask on transition from non-composited to composited
-                    gdk_window_shape_combine_mask( gtk_widget_get_window( parent ), NULL, 0, 0 );
-
-                    Style::instance().animations().widgetSizeEngine().setAlpha(parent, true);
-                }
 #if !ENABLE_INNER_SHADOWS_HACK
                 // also sets inner list mask
                 if( GtkWidget* child = gtk_bin_get_child( GTK_BIN( widget ) ) )
                 {
-
                     const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( child ) );
 
                     // offset is needed to make combobox list border 3px wide instead of default 2
@@ -1762,7 +1715,6 @@ namespace Oxygen
 
                     gdk_window_shape_combine_mask( gtk_widget_get_window( child ), mask, offset, offset );
                     gdk_pixmap_unref( mask );
-
                 }
 #endif
             }
@@ -1780,11 +1732,11 @@ namespace Oxygen
                 // draw yet another frame around menus
                 return;
 
-        } else if( Gtk::gtk_combobox_is_viewport( widget ) ) {
+        } else if( Gtk::gtk_combo_is_viewport( widget ) ) {
 
             return;
 
-        } else if( Gtk::gtk_combobox_is_frame( widget ) ) {
+        } else if( Gtk::gtk_combo_is_frame( widget ) ) {
 
             // make GtkCombo list look a bit better
             // retrieve proper parent and check
@@ -1796,19 +1748,9 @@ namespace Oxygen
             StyleOptions options( Round );
             if( Gtk::gtk_widget_has_rgba(parent) ) options|=Alpha;
 
-            const GtkAllocation allocation( Gtk::gtk_widget_get_allocation( parent ) );
-            if( !(options&Alpha) )
-            {
-                // the same as with menus and tooltips (but changed a bit to take scrollbars into account)
-                // make background window rounded
-                Style::instance().animations().widgetSizeEngine().registerWidget(parent);
-                if( Style::instance().animations().widgetSizeEngine().updateSize(parent,allocation.width,allocation.height))
-                {
-                    GdkPixmap* mask( Style::instance().helper().roundMask( allocation.width, allocation.height ) );
-                    gdk_window_shape_combine_mask( gtk_widget_get_window( parent ), mask, 0, 0 );
-                    gdk_pixmap_unref(mask);
-                }
-            }
+            // make background window rounded
+            Style::instance().animations().widgetSizeEngine().registerWidget(parent);
+            if( Style::instance().animations().widgetSizeEngine().updateXShape(parent))
 
             // menu background and float frame
             Style::instance().renderMenuBackground( window, clipRect, x, y, w, h, options );

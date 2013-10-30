@@ -40,7 +40,12 @@
 #include "oxygenwindecooptions.h"
 #include "oxygenwindecobutton.h"
 #include "oxygenwindowmanager.h"
+
 #include <gdk/gdk.h>
+
+#ifdef GDK_WINDOWING_X11
+#include <X11/Xdefs.h>
+#endif
 
 namespace Oxygen
 {
@@ -106,6 +111,9 @@ namespace Oxygen
         //! background surface
         bool hasBackgroundSurface( void ) const;
 
+        //! update kwin blur region
+        void setWindowBlur(GdkWindow* window,bool enable);
+
         //!@name primitives
         //@{
 
@@ -129,8 +137,8 @@ namespace Oxygen
         //! window background
         /*! returns true if window gradient could be rendered */
         bool renderWindowBackground( cairo_t*, GdkWindow*, GtkWidget*, GdkRectangle*, gint, gint, gint, gint, const StyleOptions& = StyleOptions(), TileSet::Tiles = TileSet::Center, bool isMaximized=false );
-        bool renderWindowBackground( cairo_t* c, gint x, gint y, gint w, gint h, bool maximized )
-        { return renderWindowBackground( c, 0, 0, 0, x, y, w, h, StyleOptions(), TileSet::Center, maximized );}
+        bool renderWindowBackground( cairo_t* c, gint x, gint y, gint w, gint h, bool maximized, StyleOptions& options )
+        { return renderWindowBackground( c, 0, 0, 0, x, y, w, h, options, TileSet::Center, maximized );}
 
         bool renderWindowBackground( GdkWindow* window, GtkWidget* widget, GdkRectangle* r, gint x, gint y, gint w, gint h, const StyleOptions& o = StyleOptions(), TileSet::Tiles tiles= TileSet::Center )
         { return renderWindowBackground( 0L, window, widget, r, x, y, w, h, o, tiles ); }
@@ -304,6 +312,12 @@ namespace Oxygen
         //! sanitize size
         void sanitizeSize( GdkWindow* window, gint& width, gint& height ) const;
 
+        //! draw tab close x icon
+        void renderTabCloseIcon(cairo_t* context, GdkRectangle* r) const;
+
+        //! draw tab close button
+        void renderTabCloseButton(cairo_t* context, GdkRectangle* r, const ColorUtils::Rgba& base, const ColorUtils::Rgba& color);
+
         // get tiles for given tab orientation
         TileSet::Tiles tabTiles( GtkPositionType position ) const
         {
@@ -324,8 +338,7 @@ namespace Oxygen
         protected:
 
         //! constructor
-        explicit Style( void )
-        {}
+        Style( void );
 
         //! get color matching role from either style option or default palette
         const ColorUtils::Rgba& color( Palette::Role role, const StyleOptions& option ) const
@@ -505,6 +518,11 @@ namespace Oxygen
 
         //! Tab close buttons
         TabCloseButtons _tabCloseButtons;
+
+        #ifdef GDK_WINDOWING_X11
+        //! Atom to show kwin what regions of translucent windows should be blurred
+        Atom _blurAtom;
+        #endif
 
         //! singleton
         static Style* _instance;

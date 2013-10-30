@@ -333,6 +333,9 @@ namespace Oxygen
         //! true if scrolled window must be forced to have a sunken frame
         bool gtk_scrolled_window_force_sunken( GtkWidget* );
 
+        //! returns true if widget is a tooltip, useful when GTK_IS_TOOLTIP() gives false for real tooltip
+        bool gtk_is_tooltip( GtkWidget* widget );
+
         //!@name button utilities
         //@{
 
@@ -365,14 +368,20 @@ namespace Oxygen
         //! true if widget is the treeview of a combobox
         bool gtk_combobox_is_tree_view( GtkWidget* );
 
-        //! true if widget is the treeview of a combobox
+        //! true if widget is the scrolled window of a combobox
         bool gtk_combobox_is_scrolled_window( GtkWidget* );
 
-        //! true if widget is the treeview of a combobox
-        bool gtk_combobox_is_viewport( GtkWidget* );
+        //! true if widget is the viewport of a combo
+        bool gtk_combo_is_viewport( GtkWidget* );
 
-        //! true if widget is the treeview of a combobox
-        bool gtk_combobox_is_frame( GtkWidget* );
+        //! true if widget is the frame of a combo
+        bool gtk_combo_is_frame( GtkWidget* );
+
+        //! true if widget is the popup window of a combobox
+        bool gtk_combobox_is_popup( GtkWidget* );
+
+        //! true if widget is the popup window of a combo
+        bool gtk_combo_is_popup( GtkWidget* );
 
         //! true if combobox must appear as list
         bool gtk_combobox_appears_as_list( GtkWidget* );

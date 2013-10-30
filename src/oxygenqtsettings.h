@@ -195,6 +195,10 @@ namespace Oxygen
         WindowDragMode windowDragMode( void ) const
         { return _windowDragMode; }
 
+        //! use window manager to handle move-resize
+        bool useWMMoveResize( void ) const
+        { return _useWMMoveResize; }
+
         //! drag distance
         int startDragDist( void ) const
         { return _startDragDist; }
@@ -308,6 +312,11 @@ namespace Oxygen
             }
         }
 
+        int backgroundOpacity() const
+        {
+            return _backgroundOpacity;
+        }
+
         //! windeco font
         const FontInfo& WMFont( void ) const
         { return _WMFont; }
@@ -348,6 +357,9 @@ namespace Oxygen
 
         protected:
 
+        //! read output from a command - replacement for not always working g_spawn_command_line_sync()
+        bool runCommand( const std::string& command, char*& result ) const;
+
         //! kdeglobals settings
         /*! returns true if changed */
         bool loadKdeGlobals( void );
@@ -387,6 +399,9 @@ namespace Oxygen
         //! update gtk colors
         /*! generates an RC string and pass it to gtk */
         void generateGtkColors( void );
+
+        //! add Html link colors to RC's current section
+        void addLinkColors( const std::string& );
 
         //! load fonts from kdeglobals and pass to gtk
         void loadKdeFonts( void );
@@ -511,6 +526,9 @@ namespace Oxygen
         //! window drag mode
         WindowDragMode _windowDragMode;
 
+        //! use window manager to handle window grab
+        bool _useWMMoveResize;
+
         //! drag distance
         int _startDragDist;
 
@@ -574,6 +592,9 @@ namespace Oxygen
 
         //! inactive shadows
         ShadowConfiguration _inactiveShadowConfiguration;
+
+        //! oxygen-transparent background opacity
+        int _backgroundOpacity;
 
         //! windeco font
         FontInfo _WMFont;
