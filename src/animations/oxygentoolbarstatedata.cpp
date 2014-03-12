@@ -1,6 +1,6 @@
 /*
 * this file is part of the oxygen gtk engine
-* Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Hugo Pereira Da Costa <hugo.pereira@free.fr>
 *
 * This  library is free  software; you can  redistribute it and/or
 * modify it  under  the terms  of the  GNU Lesser  General  Public
@@ -136,6 +136,19 @@ namespace Oxygen
         {
             iter->second.disconnect();
             _hoverData.erase( iter );
+        }
+
+        // disconnect previous and current
+        if( widget == _previous._widget )
+        {
+            _previous._widget = 0L;
+            _previous._timeLine.disconnect();
+        }
+
+        if( widget == _current._widget )
+        {
+            _current._widget = 0L;
+            _current._timeLine.disconnect();
         }
 
     }

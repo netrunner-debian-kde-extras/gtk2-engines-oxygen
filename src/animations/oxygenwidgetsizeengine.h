@@ -2,7 +2,7 @@
 #define oxygenwidgetsizeengine_h
 /*
 * this file is part of the oxygen gtk engine
-* Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Hugo Pereira Da Costa <hugo.pereira@free.fr>
 *
 * This  library is free  software; you can  redistribute it and/or
 * modify it  under  the terms  of the  GNU Lesser  General  Public
@@ -52,8 +52,8 @@ namespace Oxygen
         {}
 
         //! update window XShape for given widget
-        bool updateXShape( GtkWidget* widget )
-        { return data().value( widget ).updateXShape(); }
+        bool updateMask( GtkWidget* widget )
+        { return data().value( widget ).updateMask(); }
     };
 
 }

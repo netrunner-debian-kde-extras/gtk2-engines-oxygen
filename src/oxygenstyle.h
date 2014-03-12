@@ -2,7 +2,7 @@
 #define oxygenstyle_h
 /*
 * this file is part of the oxygen gtk engine
-* Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Hugo Pereira Da Costa <hugo.pereira@free.fr>
 * Copyright (c) 2010 Ruslan Kabatsayev <b7.10110111@gmail.com>
 *
 * This  library is free  software; you can  redistribute it and/or
@@ -119,11 +119,11 @@ namespace Oxygen
 
         //! fill given rectangle with flat color
         void fill( GdkWindow* window, GdkRectangle* r, gint x, gint y, gint w, gint h, Palette::Role role ) const
-        { fill( window, r, x, y, w, h, settings().palette().color( Palette::Active, role ) ); }
+        { fill( window, r, x, y, w, h, _settings.palette().color( Palette::Active, role ) ); }
 
         //! fill given rectangle with flat color
         void fill( GdkWindow* window, GdkRectangle* r, gint x, gint y, gint w, gint h, Palette::Group group, Palette::Role role ) const
-        { fill( window, r, x, y, w, h, settings().palette().color( group, role ) ); }
+        { fill( window, r, x, y, w, h, _settings.palette().color( group, role ) ); }
 
         //! fill given rectangle with flat color
         void fill( GdkWindow*, GdkRectangle*, gint, gint, gint, gint, const ColorUtils::Rgba& color ) const;
@@ -136,15 +136,21 @@ namespace Oxygen
 
         //! window background
         /*! returns true if window gradient could be rendered */
-        bool renderWindowBackground( cairo_t*, GdkWindow*, GtkWidget*, GdkRectangle*, gint, gint, gint, gint, const StyleOptions& = StyleOptions(), TileSet::Tiles = TileSet::Center, bool isMaximized=false );
-        bool renderWindowBackground( cairo_t* c, gint x, gint y, gint w, gint h, bool maximized, StyleOptions& options )
-        { return renderWindowBackground( c, 0, 0, 0, x, y, w, h, options, TileSet::Center, maximized );}
+        bool renderWindowBackground( cairo_t*, GdkWindow*, GtkWidget*, GdkRectangle*, gint, gint, gint, gint, const StyleOptions& = StyleOptions(), bool isMaximized=false );
+        bool renderWindowBackground( GdkWindow* window, GtkWidget* widget, GdkRectangle* r, gint x, gint y, gint w, gint h, const StyleOptions& o = StyleOptions() )
+        { return renderWindowBackground( 0L, window, widget, r, x, y, w, h, o ); }
 
-        bool renderWindowBackground( GdkWindow* window, GtkWidget* widget, GdkRectangle* r, gint x, gint y, gint w, gint h, const StyleOptions& o = StyleOptions(), TileSet::Tiles tiles= TileSet::Center )
-        { return renderWindowBackground( 0L, window, widget, r, x, y, w, h, o, tiles ); }
+        bool renderWindowBackground( cairo_t* c, gint x, gint y, gint w, gint h, StyleOptions& options, bool maximized )
+        { return renderWindowBackground( c, 0L, 0L, 0L, x, y, w, h, options, maximized ); }
 
-        bool renderWindowBackground( GdkWindow* window, GdkRectangle* r, gint x, gint y, gint w, gint h, const StyleOptions& o = StyleOptions(), TileSet::Tiles tiles = TileSet::Center)
-        { return renderWindowBackground( window, 0L, r, x, y, w, h, o, tiles ); }
+        bool renderWindowBackground( GdkWindow* window, GdkRectangle* r, gint x, gint y, gint w, gint h, const StyleOptions& o = StyleOptions())
+        { return renderWindowBackground( window, 0L, r, x, y, w, h, o ); }
+
+        // render background gradient
+        bool renderBackgroundGradient( cairo_t*, GdkWindow*, GtkWidget*, GdkRectangle*, gint, gint, gint, gint, const StyleOptions& = StyleOptions(), bool isMaximized=false );
+
+        // render background pixmap
+        bool renderBackgroundPixmap( cairo_t*, GdkWindow*, GtkWidget*, GdkRectangle*, gint, gint, gint, gint, bool isMaximized=false );
 
         //! groupbox background
         bool renderGroupBoxBackground( GdkWindow* window, GtkWidget* widget, GdkRectangle* r, gint x, gint y, gint w, gint h, const StyleOptions& o, TileSet::Tiles tiles = TileSet::Center )
@@ -348,7 +354,7 @@ namespace Oxygen
         const ColorUtils::Rgba& color( Palette::Group group, Palette::Role role, const StyleOptions& option ) const
         {
             Palette::ColorSet::const_iterator iter( option._customColors.find( role ) );
-            return iter == option._customColors.end() ? settings().palette().color( group, role ) : iter->second;
+            return iter == option._customColors.end() ? _settings.palette().color( group, role ) : iter->second;
         }
 
         //! set background surface

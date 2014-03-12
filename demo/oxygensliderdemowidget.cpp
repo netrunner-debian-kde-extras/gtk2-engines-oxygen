@@ -1,6 +1,6 @@
 /*
 * this file is part of the oxygen gtk engine
-* Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Hugo Pereira Da Costa <hugo.pereira@free.fr>
 *
 * based on the Null Theme Engine for Gtk+.
 * Copyright (c) 2008 Robert Staudinger <robert.staudinger@gmail.com>
@@ -146,8 +146,12 @@ namespace Oxygen
 
         }
 
-        _horizontalSliders.connect( GCallback( valueChanged ), this );
-        _verticalSliders.connect( GCallback( valueChanged ), this );
+        // connections
+        connect( G_OBJECT( _horizontalSliders._scale ), "value-changed", GCallback( valueChanged ), this );
+        connect( G_OBJECT( _horizontalSliders._scrollBar ), "value-changed", GCallback( valueChanged ), this );
+
+        connect( G_OBJECT( _verticalSliders._scale ), "value-changed", GCallback( valueChanged ), this );
+        connect( G_OBJECT( _verticalSliders._scrollBar ), "value-changed", GCallback( valueChanged ), this );
 
         // Initialize all
         gtk_range_set_value( GTK_RANGE( _verticalSliders._scale ), 25 );

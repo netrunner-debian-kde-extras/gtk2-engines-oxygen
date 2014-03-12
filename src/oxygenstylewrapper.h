@@ -2,7 +2,7 @@
 #define oxygenstylewrapper_h
 /*
 * this file is part of the oxygen gtk engine
-* Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Hugo Pereira Da Costa <hugo.pereira@free.fr>
 *
 * based on the Null Theme Engine for Gtk+.
 * Copyright (c) 2008 Robert Staudinger <robert.staudinger@gmail.com>
@@ -43,6 +43,13 @@ namespace Oxygen
 
         //! type registration
         static void registerType( GTypeModule* );
+
+        //! version type registration
+        /*!
+        it is used to let an external program retrieve
+        the oxygen-gtk version that it uses, if any
+        */
+        static void registerVersionType( void );
 
         //! registered type
         static GType type( void );

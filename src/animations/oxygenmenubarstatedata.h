@@ -2,7 +2,7 @@
 #define oxygenmenubarstatedata_h
 /*
 * this file is part of the oxygen gtk engine
-* Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Hugo Pereira Da Costa <hugo.pereira@free.fr>
 * Copyright (c) 2010 Ruslan Kabatsayev <b7.10110111@gmail.com>
 *
 * MenuBarState prelight effect is based on
@@ -35,6 +35,8 @@
 #include "oxygentimeline.h"
 
 #include <gtk/gtk.h>
+
+#include <map>
 
 namespace Oxygen
 {
@@ -119,6 +121,12 @@ namespace Oxygen
         //@}
 
         protected:
+
+        //! register child
+        void registerChild( GtkWidget* );
+
+        //! disconnect child
+        void unregisterChild( GtkWidget* );
 
         //! update items
         void updateItems( GdkEventType );
@@ -208,6 +216,9 @@ namespace Oxygen
         //!@name callbacks
         //@{
 
+        //! child is destroyed
+        static gboolean childDestroyNotifyEvent( GtkWidget*, gpointer );
+
         //! mouse motion events
         static gboolean motionNotifyEvent( GtkWidget*, GdkEventMotion*, gpointer);
 
@@ -246,6 +257,10 @@ namespace Oxygen
         Data _current;
 
         //@}
+
+        //! map children to destroy signal
+        typedef std::map<GtkWidget*, Signal> ChildrenMap;
+        ChildrenMap _children;
 
     };
 
