@@ -2,7 +2,7 @@
 #define oxygenmenustatedata_h
 /*
 * this file is part of the oxygen gtk engine
-* Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Hugo Pereira Da Costa <hugo.pereira@free.fr>
 *
 * This  library is free  software; you can  redistribute it and/or
 * modify it  under  the terms  of the  GNU Lesser  General  Public
@@ -29,6 +29,8 @@
 #include "oxygentimeline.h"
 
 #include <gtk/gtk.h>
+
+#include <map>
 
 namespace Oxygen
 {
@@ -123,6 +125,12 @@ namespace Oxygen
         //@}
 
         protected:
+
+        //! register child
+        void registerChild( GtkWidget* );
+
+        //! disconnect child
+        void unregisterChild( GtkWidget* );
 
         //! update items
         void updateItems( void );
@@ -230,6 +238,9 @@ namespace Oxygen
         //!@name callbacks
         //@{
 
+        //! child is destroyed
+        static gboolean childDestroyNotifyEvent( GtkWidget*, gpointer );
+
         //! mouse motion events
         static gboolean motionNotifyEvent( GtkWidget*, GdkEventMotion*, gpointer);
 
@@ -283,6 +294,10 @@ namespace Oxygen
         Timer _timer;
 
         //@}
+
+        //! map children to destroy signal
+        typedef std::map<GtkWidget*, Signal> ChildrenMap;
+        ChildrenMap _children;
 
     };
 

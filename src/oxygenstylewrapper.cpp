@@ -1,6 +1,6 @@
 /*
 * this file is part of the oxygen gtk engine
-* Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Hugo Pereira Da Costa <hugo.pereira@free.fr>
 * Copyright (c) 2010 Ruslan Kabatsayev <b7.10110111@gmail.com>
 *
 * based on the Null Theme Engine for Gtk+.
@@ -27,12 +27,11 @@
 
 #include "oxygenstylewrapper.h"
 
-#include "config.h"
-
 #include "oxygen.h"
 #include "oxygenanimations.h"
 #include "oxygenargbhelper.h"
 #include "oxygencairoutils.h"
+#include "oxygendefines.h"
 #include "oxygengtkcellinfo.h"
 #include "oxygengtkdetails.h"
 #include "oxygengtktypenames.h"
@@ -41,6 +40,7 @@
 #include "oxygenstyle.h"
 #include "oxygenwindowmanager.h"
 #include "oxygencolorutils.h"
+#include "config.h"
 
 #include <iostream>
 namespace Oxygen
@@ -283,7 +283,7 @@ namespace Oxygen
             if( GDK_IS_WINDOW( window ) )
             {
                 Style::instance().animations().widgetSizeEngine().registerWidget( widget );
-                Style::instance().animations().widgetSizeEngine().updateXShape(widget);
+                Style::instance().animations().widgetSizeEngine().updateMask(widget);
             }
 
             Style::instance().renderTooltipBackground( window, clipRect, x, y, w, h, options );
@@ -1258,7 +1258,7 @@ namespace Oxygen
                     Style::instance().animations().menuItemEngine().registerMenu( widget );
 
                     Style::instance().animations().widgetSizeEngine().registerWidget( widget );
-                    Style::instance().animations().widgetSizeEngine().updateXShape( widget );
+                    Style::instance().animations().widgetSizeEngine().updateMask( widget );
                 }
 
                 // if render
@@ -1656,15 +1656,21 @@ namespace Oxygen
         { return; }
 
         // adjust shadow type for some known widgets
-        if( d.isScrolledWindow() &&
-            shadow != GTK_SHADOW_IN &&
-            GTK_IS_SCROLLED_WINDOW( widget ) &&
-            Gtk::gtk_scrolled_window_force_sunken( widget ) )
+        if( d.isScrolledWindow() && GTK_IS_SCROLLED_WINDOW( widget ) )
         {
 
             // make sure that scrolled windows containing a treeView have sunken frame
-            shadow = GTK_SHADOW_IN;
-            gtk_scrolled_window_set_shadow_type( GTK_SCROLLED_WINDOW( widget ), GTK_SHADOW_IN );
+            if( shadow != GTK_SHADOW_IN && Gtk::gtk_scrolled_window_force_sunken( widget ) )
+            {
+
+                shadow = GTK_SHADOW_IN;
+                gtk_scrolled_window_set_shadow_type( GTK_SCROLLED_WINDOW( widget ), GTK_SHADOW_IN );
+
+            }
+
+            // register to inner shadow engine
+            if( shadow == GTK_SHADOW_IN && gtk_scrolled_window_get_shadow_type( GTK_SCROLLED_WINDOW( widget ) ) == GTK_SHADOW_IN )
+            { Style::instance().animations().innerShadowEngine().registerChild( widget, gtk_bin_get_child( GTK_BIN( widget ) ) ); }
 
         } else if(
             d.isFrame() &&
@@ -1696,7 +1702,7 @@ namespace Oxygen
 
             // always register to widget size engine
             Style::instance().animations().widgetSizeEngine().registerWidget( parent );
-            const bool sizeChanged( Style::instance().animations().widgetSizeEngine().updateXShape(parent) );
+            const bool sizeChanged( Style::instance().animations().widgetSizeEngine().updateMask(parent) );
             if( sizeChanged )
             {
 #if !ENABLE_INNER_SHADOWS_HACK
@@ -1750,7 +1756,7 @@ namespace Oxygen
 
             // make background window rounded
             Style::instance().animations().widgetSizeEngine().registerWidget(parent);
-            if( Style::instance().animations().widgetSizeEngine().updateXShape(parent))
+            Style::instance().animations().widgetSizeEngine().updateMask(parent);
 
             // menu background and float frame
             Style::instance().renderMenuBackground( window, clipRect, x, y, w, h, options );
@@ -2066,9 +2072,13 @@ namespace Oxygen
                     // also change scrolled window shadow if needed
                     GtkScrolledWindow* scrolledWindow(GTK_SCROLLED_WINDOW( child ) );
                     if( gtk_scrolled_window_get_shadow_type( scrolledWindow ) != GTK_SHADOW_IN )
-                    { gtk_scrolled_window_set_shadow_type( scrolledWindow, GTK_SHADOW_IN ); }
+                    {
+                        gtk_scrolled_window_set_shadow_type( scrolledWindow, GTK_SHADOW_IN );
+                        Style::instance().animations().innerShadowEngine().registerChild( child, gtk_bin_get_child( GTK_BIN( child ) ) );
+                    }
 
                     return;
+
                 }
 
             }
@@ -3707,6 +3717,7 @@ namespace Oxygen
             Oxygen::Style::instance().animations().setEnabled( false );
             Oxygen::Style::instance().animations().setInnerShadowsEnabled( false );
             Oxygen::Style::instance().animations().comboBoxEngine().setEnabled( true );
+            Oxygen::Style::instance().animations().backgroundHintEngine().setEnabled( true );
         }
 
     }
@@ -3780,6 +3791,26 @@ namespace Oxygen
         #if OXYGEN_DEBUG
         std::cerr << "Oxygen::StyleWrapper::registerType - done" << std::endl;
         #endif
+
+    }
+
+    //_______________________________________________________________________________________________________________
+    void StyleWrapper::registerVersionType( void )
+    {
+
+        // register version type
+        GType type( g_type_register_static_simple(
+            G_TYPE_OBJECT,
+            OXYGEN_VERSION_TYPE_NAME,
+            (guint16)sizeof( GObjectClass ),
+            (GClassInitFunc) NULL,
+            (guint16)sizeof( GObject ),
+            (GInstanceInitFunc) NULL,
+            G_TYPE_FLAG_ABSTRACT ) );
+
+        // quark
+        GQuark quark( g_quark_from_string( OXYGEN_VERSION_QUARK_NAME ) );
+        g_type_set_qdata( type, quark, (gpointer) OXYGEN_VERSION );
 
     }
 

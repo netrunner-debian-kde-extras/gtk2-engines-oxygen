@@ -1,6 +1,6 @@
 /*
 * this file is part of the oxygen gtk engine
-* Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Hugo Pereira Da Costa <hugo.pereira@free.fr>
 *
 * inspired notably from kdelibs/kdeui/color/kcolorutils.h
 * Copyright (C) 2007 Matthew Woehlke <mw_triad@users.sourceforge.net>
@@ -93,12 +93,13 @@ namespace Oxygen
                 "xulrunner",
                 "komodo",
                 "aurora",
+                "zotero",
                 ""
             };
 
             for( unsigned int index = 0; !XulAppNames[index].empty(); ++index )
             {
-                if( gtkAppName.find( XulAppNames[index] ) == 0 )
+                if( gtkAppName.find( XulAppNames[index] ) == 0 || pidAppName.find( XulAppNames[index] ) == 0 )
                 {
                     _name = XUL;
                     break;
@@ -168,19 +169,23 @@ namespace Oxygen
         // try read file
         std::ifstream in( filename.str().c_str() );
         if( !in ) return std::string();
+        std::string line;
+        std::getline( in, line, '\0' );
+        const size_t pos( line.rfind( '/' ) );
+        return ( pos == std::string::npos ) ? line:line.substr( pos+1 );
 
-        /*
-        somehow std::getline gets some extra crap (non char) from the procfile
-        one has to use ifstream::getline, and pass it a fixed size line
-        */
-        char lineC[1024];
-        in.getline( lineC, 1024, '\n' );
-        std::string line( lineC );
-
-        // get position of last "/" character, and truncate accordingly
-        const size_t pos = line.rfind( '/' );
-        if( pos == std::string::npos ) return line;
-        else return line.substr( pos+1 );
+//         /*
+//         somehow std::getline gets some extra crap (non char) from the procfile
+//         one has to use ifstream::getline, and pass it a fixed size line
+//         */
+//         char lineC[1024];
+//         in.getline( lineC, 1024, '\n' );
+//         std::string line( lineC );
+//
+//         // get position of last "/" character, and truncate accordingly
+//         const size_t pos = line.rfind( '/' );
+//         if( pos == std::string::npos ) return line;
+//         else return line.substr( pos+1 );
 
     }
 

@@ -2,7 +2,7 @@
 #define oxygenwidgetsizedata_h
 /*
 * this file is part of the oxygen gtk engine
-* Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Hugo Pereira Da Costa <hugo.pereira@free.fr>
 * Copyright (c) 2010 Ruslan Kabatsayev <b7.10110111@gmail.com>
 *
 * This  library is free  software; you can  redistribute it and/or
@@ -33,7 +33,7 @@ namespace Oxygen
 
         //! constructor
         WidgetSizeData( void ):
-            _widget(NULL),
+            _target(NULL),
             _width(-1),
             _height(-1),
             _alpha(false)
@@ -45,20 +45,18 @@ namespace Oxygen
 
         //! setup connections
         void connect( GtkWidget* widget )
-        {
-            _widget=widget;
-        }
+        { _target = widget; }
 
         //! disconnect
-        void disconnect( GtkWidget* ) const
-        {}
+        void disconnect( GtkWidget* )
+        { _target = 0L; }
 
         //! update XShape, return true if size has changed
-        bool updateXShape();
+        bool updateMask();
 
         private:
         //! target widget
-        GtkWidget* _widget;
+        GtkWidget* _target;
 
         //! old width
         int _width;

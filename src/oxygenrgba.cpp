@@ -1,6 +1,6 @@
 /*
 * this file is part of the oxygen gtk engine
-* Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Hugo Pereira Da Costa <hugo.pereira@free.fr>
 *
 * inspired notably from kdelibs/kdeui/color/kcolorutils.h
 * Copyright (C) 2007 Matthew Woehlke <mw_triad@users.sourceforge.net>
@@ -77,7 +77,7 @@ namespace Oxygen
             "(?:(\\d+),(\\d+),(\\d+)(?:,(\\d+))?)",
             G_REGEX_CASELESS, (GRegexMatchFlags)0, 0L );
 
-        GMatchInfo* matchInfo;
+        GMatchInfo* matchInfo(0L);
         g_regex_match( regex, value.c_str(), (GRegexMatchFlags)0, &matchInfo);
         const int matchCount( g_match_info_get_match_count( matchInfo ) );
         if( matchCount == 2 )

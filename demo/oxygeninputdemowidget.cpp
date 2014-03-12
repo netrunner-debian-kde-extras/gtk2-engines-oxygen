@@ -1,6 +1,6 @@
 /*
 * this file is part of the oxygen gtk engine
-* Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Hugo Pereira Da Costa <hugo.pereira@free.fr>
 *
 * based on the Null Theme Engine for Gtk+.
 * Copyright (c) 2008 Robert Staudinger <robert.staudinger@gmail.com>
@@ -135,7 +135,7 @@ namespace Oxygen
         gtk_toggle_button_set_active( GTK_TOGGLE_BUTTON( checkbutton ), false );
         gtk_widget_show( checkbutton );
 
-        _flatModeChangedId.connect( G_OBJECT( checkbutton ), "toggled", G_CALLBACK( flatModeChanged ), this );
+        connect( G_OBJECT( checkbutton ), "toggled", G_CALLBACK( flatModeChanged ), this );
 
 
         // separator
@@ -191,7 +191,7 @@ namespace Oxygen
         gtk_toggle_button_set_active( GTK_TOGGLE_BUTTON( checkbutton ), true );
         gtk_widget_show( checkbutton );
 
-        _wrapModeChangedId.connect( G_OBJECT( checkbutton ), "toggled", G_CALLBACK( wrapModeChanged ), this );
+        connect( G_OBJECT( checkbutton ), "toggled", G_CALLBACK( wrapModeChanged ), this );
 
     }
 

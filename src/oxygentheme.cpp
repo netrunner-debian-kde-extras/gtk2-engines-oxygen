@@ -1,6 +1,6 @@
 /*
 * this file is part of the oxygen gtk engine
-* Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Hugo Pereira Da Costa <hugo.pereira@free.fr>
 * Copyright (c) 2010 Ruslan Kabatsayev <b7.10110111@gmail.com>
 *
 * based on the Null Theme Engine for Gtk+.
@@ -41,6 +41,14 @@
 #include <vector>
 #include <sys/stat.h>
 
+
+//_________________________________________________
+int theme_exit_callback( gpointer )
+{
+    theme_exit();
+    return false;
+}
+
 //_________________________________________________
 void theme_init( GTypeModule* module )
 {
@@ -51,9 +59,13 @@ void theme_init( GTypeModule* module )
 
     Oxygen::RCStyle::registerType( module );
     Oxygen::StyleWrapper::registerType( module );
+    Oxygen::StyleWrapper::registerVersionType();
 
     // style initialization
     Oxygen::Style::instance().initialize();
+
+//     // add quit function to make sure theme is de-allocated properly
+//     gtk_quit_add( gtk_main_level(), theme_exit_callback, 0x0 );
 
 }
 

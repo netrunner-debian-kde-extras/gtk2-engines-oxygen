@@ -1,6 +1,6 @@
 /*
 * this file is part of the oxygen gtk engine
-* Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Hugo Pereira Da Costa <hugo.pereira@free.fr>
 *
 * based on the Null Theme Engine for Gtk+.
 * Copyright (c) 2008 Robert Staudinger <robert.staudinger@gmail.com>
@@ -86,7 +86,7 @@ namespace Oxygen
             gtk_widget_show( comboBox );
 
             // connection
-            _changedId.connect( G_OBJECT( comboBox ), "changed", G_CALLBACK( orientationChanged ), this );
+            connect( G_OBJECT( comboBox ), "changed", G_CALLBACK( orientationChanged ), this );
 
         }
 
@@ -128,17 +128,17 @@ namespace Oxygen
                 gtk_box_pack_start( GTK_BOX( vbox ), radiobutton = gtk_radio_button_new_with_label( 0L, "Raised" ), false, true, 0 );
                 gtk_widget_show( radiobutton );
                 _widgets.insert( std::make_pair( radiobutton, GTK_SHADOW_OUT ) );
-                g_signal_connect( G_OBJECT( radiobutton ), "toggled", G_CALLBACK( shadowChanged ), this );
+                connect( G_OBJECT( radiobutton ), "toggled", G_CALLBACK( shadowChanged ), this );
 
                 gtk_box_pack_start( GTK_BOX( vbox ), radiobutton = gtk_radio_button_new_with_label_from_widget( GTK_RADIO_BUTTON( radiobutton ), "Etched" ), false, true, 0 );
                 gtk_widget_show( radiobutton );
                 _widgets.insert( std::make_pair( radiobutton, GTK_SHADOW_ETCHED_IN ) );
-                g_signal_connect( G_OBJECT( radiobutton ), "toggled", G_CALLBACK( shadowChanged ), this );
+                connect( G_OBJECT( radiobutton ), "toggled", G_CALLBACK( shadowChanged ), this );
 
                 gtk_box_pack_start( GTK_BOX( vbox ), radiobutton = gtk_radio_button_new_with_label_from_widget( GTK_RADIO_BUTTON( radiobutton ), "Sunken" ), false, true, 0 );
                 gtk_widget_show( radiobutton );
                 _widgets.insert( std::make_pair( radiobutton, GTK_SHADOW_IN ) );
-                g_signal_connect( G_OBJECT( radiobutton ), "toggled", G_CALLBACK( shadowChanged ), this );
+                connect( G_OBJECT( radiobutton ), "toggled", G_CALLBACK( shadowChanged ), this );
 
             }
 

@@ -1,6 +1,6 @@
 /*
 * this file is part of the oxygen gtk engine
-* Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Hugo Pereira Da Costa <hugo.pereira@free.fr>
 * Copyright (c) 2010 Ruslan Kabatsayev <b7.10110111@gmail.com>
 *
 * This  library is free  software; you can  redistribute it and/or
@@ -28,6 +28,8 @@
 #include "oxygentimeline.h"
 #include "config.h"
 
+#include <glib.h>
+#include <glib/gstdio.h>
 #include <gtk/gtk.h>
 
 #include <algorithm>
@@ -38,7 +40,6 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
-#include <unistd.h>
 
 namespace Oxygen
 {
@@ -57,6 +58,7 @@ namespace Oxygen
         _kdeFallbackIconTheme( "gnome" ),
         _inactiveChangeSelectionColor( false ),
         _useIconEffect( true ),
+        _useBackgroundGradient( true ),
         _checkBoxStyle( CS_CHECK ),
         _tabStyle( TS_SINGLE ),
         _scrollBarAddLineButtons( 2 ),
@@ -330,11 +332,12 @@ namespace Oxygen
         struct stat st;
         if( stat( _userConfigDir.c_str(), &st ) != 0 )
         {
-
-            #if _POSIX_C_SOURCE
-            mkdir( _userConfigDir.c_str(), S_IRWXU|S_IRWXG|S_IRWXO );
+            #ifdef G_OS_WIN32
+            // S_IRWXG and S_IRWXO are undefined on Windows, and g_mkdir()
+            // ignores its second parameter on Windows anyway.
+            g_mkdir( _userConfigDir.c_str(), 0 );
             #else
-            mkdir( _userConfigDir.c_str() );
+            g_mkdir( _userConfigDir.c_str(), S_IRWXU|S_IRWXG|S_IRWXO );
             #endif
         }
 
@@ -942,6 +945,9 @@ namespace Oxygen
 
         // background pixmap
         _backgroundPixmap = _oxygen.getValue( "[Common]", "BackgroundPixmap", "" );
+
+        // background gradient
+        _useBackgroundGradient = ( _oxygen.getValue( "[Common]", "UseBackgroundGradient", "true" ) == "true" );
 
         // checkbox style
         _checkBoxStyle = (_oxygen.getValue( "[Style]", "CheckBoxStyle", "CS_CHECK" ) == "CS_CHECK") ? CS_CHECK:CS_X;

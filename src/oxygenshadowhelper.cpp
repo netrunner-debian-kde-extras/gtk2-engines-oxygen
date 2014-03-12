@@ -1,6 +1,6 @@
 /*
 * this file is part of the oxygen gtk engine
-* Copyright (c) 2011 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2011 Hugo Pereira Da Costa <hugo.pereira@free.fr>
 *
 * This  library is free  software; you can  redistribute it and/or
 * modify it  under  the terms  of the  GNU Lesser  General  Public
@@ -62,9 +62,11 @@ namespace Oxygen
         std::cerr << "Oxygen::ShadowHelper::~ShadowHelper" << std::endl;
         #endif
 
+        for( WidgetMap::iterator iter = _widgets.begin(); iter != _widgets.end(); ++iter )
+        { iter->second._destroyId.disconnect(); }
+
         reset();
         _realizeHook.disconnect();
-
     }
 
     //______________________________________________

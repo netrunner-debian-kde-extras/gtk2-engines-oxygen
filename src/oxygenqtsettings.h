@@ -2,7 +2,7 @@
 #define oxygenqtsettings_h
 /*
 * this file is part of the oxygen gtk engine
-* Copyright (c) 2010 Hugo Pereira Da Costa <hugo@oxygen-icons.org>
+* Copyright (c) 2010 Hugo Pereira Da Costa <hugo.pereira@free.fr>
 *
 * This  library is free  software; you can  redistribute it and/or
 * modify it  under  the terms  of the  GNU Lesser  General  Public
@@ -92,6 +92,10 @@ namespace Oxygen
         //! use effect to render active (mouse-over) icons
         bool useIconEffect( void ) const
         { return _useIconEffect; }
+
+        //! background gradient
+        bool useBackgroundGradient( void ) const
+        { return _useBackgroundGradient; }
 
         //! background pixmap
         const std::string& backgroundPixmap( void ) const
@@ -475,6 +479,9 @@ namespace Oxygen
 
         //! active icon effect
         bool _useIconEffect;
+
+        //! background gradient
+        bool _useBackgroundGradient;
 
         //! background pixmap
         std::string _backgroundPixmap;
