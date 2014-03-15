@@ -2,6 +2,7 @@ gtk2-engines-oxygen (1.4.4-1) UNRELEASED; urgency=medium
 
   * New upstream release.
     - Fixes crashes in some application such as Eclipse. (Closes: #741401)
+  * Bump Standards-Version to 3.9.5, no changes needed.
 
  -- Felix Geyer <fgeyer@debian.org>  Wed, 12 Mar 2014 19:45:50 +0100
 
