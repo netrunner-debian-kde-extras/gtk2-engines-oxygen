@@ -1,3 +1,11 @@
+gtk2-engines-oxygen (1.4.4-2) unstable; urgency=medium
+
+  * Team upload.
+  * Fix crash in LibreOffice save dialog. (Closes: #742051)
+    - Cherry-pick upstream commit in fix-innershadow-crash.patch
+
+ -- Felix Geyer <fgeyer@debian.org>  Thu, 20 Mar 2014 20:15:45 +0100
+
 gtk2-engines-oxygen (1.4.4-1) unstable; urgency=medium
 
   * Team upload.
