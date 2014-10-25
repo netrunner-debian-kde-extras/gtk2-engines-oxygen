@@ -2,6 +2,7 @@ gtk2-engines-oxygen (1.4.6-1) UNRELEASED; urgency=medium
 
   * New upstream release.
   * Drop fix-innershadow-crash.patch, applied upstream.
+  * Add myself to uploaders.
 
  -- Felix Geyer <fgeyer@debian.org>  Sat, 25 Oct 2014 11:03:09 +0200
 
