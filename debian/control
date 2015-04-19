@@ -15,7 +15,7 @@ Vcs-Browser: http://anonscm.debian.org/gitweb/?p=pkg-kde/kde-extras/gtk2-engines
 
 Package: gtk2-engines-oxygen
 Architecture: any
-Pre-Depends: multiarch-support
+Pre-Depends: ${misc:Pre-Depends}
 Depends: ${misc:Depends}, ${shlibs:Depends}
 Suggests: kde-config-gtk-style
 Multi-Arch: same
